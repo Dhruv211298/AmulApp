@@ -2,15 +2,6 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>NSCameraUsageDescription</key>
-    <string>The camera is used to scan QR codes for attendance.</string>
-	<!-- REQUIRED for Face ID. Without this key iOS does not just deny the
-	     request, it terminates the app the first time Face ID is invoked, and
-	     App Review rejects the binary. Touch ID needs no key. -->
-	<key>NSFaceIDUsageDescription</key>
-	<string>Face ID is used to unlock the app with your saved login PIN, so you do not have to type it each time.</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>Microphone access is required by the camera module used for QR scanning.</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>
@@ -37,26 +28,48 @@
 	<true/>
 	<key>NSAppTransportSecurity</key>
 	<dict>
-	  <!-- Do not change NSAllowsArbitraryLoads to true, or you will risk app rejection! -->
 		<key>NSAllowsArbitraryLoads</key>
 		<false/>
-		<!-- Permits Metro's cleartext bundle server on the local network in debug
-		     builds. Has no effect on public internet traffic. -->
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
-		<!-- No NSExceptionDomains: every endpoint the app calls is https://
-		     (verified across services/ and all screens), so no cleartext or
-		     downgraded-TLS exception is needed. Do not re-add one without first
-		     confirming the endpoint genuinely cannot serve HTTPS. -->
 	</dict>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Your location is used to record attendance at the correct site.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>The camera is used to scan QR codes for attendance.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Face ID is used to unlock the app with your saved login PIN, so you do not have to type it each time.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>Your location is used to record attendance at the correct site.</string>
 	<key>NSLocationAlwaysUsageDescription</key>
 	<string>Your location is used to record attendance at the correct site.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Your location is used to record attendance at the correct site.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Microphone access is required by the camera module used for QR scanning.</string>
+	<key>RCTNewArchEnabled</key>
+	<true/>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<false/>
+		<key>UISceneConfigurations</key>
+		<dict>
+			<key>UIWindowSceneSessionRoleApplication</key>
+			<array>
+				<dict>
+					<key>UISceneConfigurationName</key>
+					<string>Default Configuration</string>
+					<key>UISceneDelegateClassName</key>
+					<string>$(PRODUCT_MODULE_NAME).SceneDelegate</string>
+				</dict>
+			</array>
+		</dict>
+	</dict>
 	<key>UIRequiredDeviceCapabilities</key>
 	<array>
 		<string>arm64</string>

@@ -6,10 +6,12 @@ import FirebaseCore
 
 @main
 class AppDelegate: UIResponder, UIApplicationDelegate {
-  // NOTE: the window is NOT created here any more. Under the UIScene lifecycle
-  // (required on iOS 26+/iOS 27) the window belongs to the SceneDelegate. The
-  // AppDelegate only sets up app-level state and holds the RN factory so the
-  // SceneDelegate can start React Native when its scene connects.
+  // Kept ONLY for Firebase/GoogleUtilities' app-delegate swizzler, which calls
+  // `-[AppDelegate window]`. It is unused under the UIScene lifecycle (the real
+  // window lives in SceneDelegate), but it MUST exist or the swizzler crashes at
+  // launch with "unrecognized selector sent to instance ... window".
+  var window: UIWindow?
+
   var reactNativeDelegate: ReactNativeDelegate?
   var reactNativeFactory: RCTReactNativeFactory?
 

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- =========================================================================
+  DEBUG-ONLY manifest overlay. This file is merged into the manifest for
+  DEBUG builds exclusively — it is never part of a release APK/AAB.
+
+  Why it must exist: Metro (the dev bundler) is a plain-HTTP server on the
+  host machine (http://10.0.2.2:8081 from an emulator). This app targets
+  SDK 36, and Android blocks cleartext HTTP by default since API 28. Without
+  this overlay the very first thing a debug build does — asking Metro
+  "are you running?" — is silently blocked by the OS, React Native concludes
+  Metro is down, falls back to loading index.android.bundle from the APK
+  assets (which debug builds intentionally don't contain), and every launch
+  dies on the red "Unable to load script" screen.
+
+  This file was removed during the HTTPS-hardening cleanup (see the note in
+  src/config.js about the network-security-config being deleted). Removing
+  the RELEASE cleartext exceptions was correct; this debug overlay is the one
+  piece the stock React Native template requires. Do not delete it again.
+========================================================================== -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <application
+        android:usesCleartextTraffic="true"
+        tools:targetApi="28"
+        tools:ignore="GoogleAppIndexingWarning" />
+</manifest>

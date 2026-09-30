@@ -1,0 +1,19 @@
+diff --git a/node_modules/@bam.tech/react-native-image-resizer/react-native-image-resizer.podspec b/node_modules/@bam.tech/react-native-image-resizer/react-native-image-resizer.podspec
+index 1848ae8..db6a1c8
+--- a/node_modules/@bam.tech/react-native-image-resizer/react-native-image-resizer.podspec
++++ b/node_modules/@bam.tech/react-native-image-resizer/react-native-image-resizer.podspec
+@@ -26,11 +26,9 @@ Pod::Spec.new do |s|
+         "OTHER_CPLUSPLUSFLAGS" => "-DFOLLY_NO_CONFIG -DFOLLY_MOBILE=1 -DFOLLY_USE_LIBCPP=1",
+         "CLANG_CXX_LANGUAGE_STANDARD" => "c++17"
+     }
+-    s.dependency "React-Codegen"
+-    s.dependency "RCT-Folly"
+-    s.dependency "RCTRequired"
+-    s.dependency "RCTTypeSafety"
+-    s.dependency "ReactCommon/turbomodule/core"
++    # RN 0.86: React-Codegen / RCT-Folly / RCTRequired / RCTTypeSafety no longer
++    # exist as standalone pods (prebuilt ReactNativeDependencies supplies them).
++    # install_modules_dependencies adds every dependency this module needs.
+     install_modules_dependencies(s)
+   else
+     s.dependency "React-Core"

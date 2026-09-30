@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "15734589826",
+    "project_id": "amul-common-app",
+    "storage_bucket": "amul-common-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:15734589826:android:f4b68293725d06c562679b",
+        "android_client_info": {
+          "package_name": "com.amulapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCeeiqWO2QoxObLOoZ5EqAeyi6_HeUjzjs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

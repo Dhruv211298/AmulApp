@@ -1,0 +1,72 @@
+$RNFirebaseDisableSPM = true
+
+# Resolve react_native_pods.rb with node to allow for hoisting
+require Pod::Executable.execute_command('node', ['-p',
+  'require.resolve(
+    "react-native/scripts/react_native_pods.rb",
+    {paths: [process.argv[1]]},
+  )', __dir__]).strip
+
+platform :ios, min_ios_version_supported
+prepare_react_native_project!
+
+use_modular_headers!
+
+linkage = ENV['USE_FRAMEWORKS']
+if linkage != nil
+  Pod::UI.puts "Configuring Pod with #{linkage}ally linked Frameworks".green
+  use_frameworks! :linkage => linkage.to_sym
+end
+
+target 'AmulApp' do
+  config = use_native_modules!
+
+  use_react_native!(
+    :path => config[:reactNativePath],
+    # An absolute path to your application root.
+    :app_path => "#{Pod::Config.instance.installation_root}/.."
+  )
+
+  post_install do |installer|
+    react_native_post_install(
+      installer,
+      config[:reactNativePath],
+      :mac_catalyst_enabled => false,
+      # :ccache_enabled => true
+    )
+
+    # Some pods (e.g. RNDeviceInfo's privacy bundle) declare deployment
+    # targets as low as iOS 9.0. Current Xcode only supports >= 12.0 and
+    # warns now; a future Xcode will hard-fail. Raise only the pods that sit
+    # BELOW the app's own minimum — pods already at or above it are left
+    # untouched, so nothing about the built app changes.
+    # Defensive: resolve the app minimum without assuming the helper method is
+    # reachable in this scope, and never let this cosmetic fix abort pod
+    # install — a half-written Pods folder is far worse than a warning.
+    begin
+      min_ios_str = defined?(min_ios_version_supported) ? min_ios_version_supported.to_s : '15.1'
+      min_ios = min_ios_str.to_f
+
+      # PROJECT-level first: resource-bundle targets (e.g. RNDeviceInfo's
+      # privacy bundle) declare no target-level deployment target and inherit
+      # the project's — which is where the lingering "9.0" actually lives.
+      installer.pods_project.build_configurations.each do |bc|
+        current = bc.build_settings['IPHONEOS_DEPLOYMENT_TARGET'].to_f
+        if current > 0 && current < min_ios
+          bc.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = min_ios_str
+        end
+      end
+
+      installer.pods_project.targets.each do |t|
+        t.build_configurations.each do |bc|
+          current = bc.build_settings['IPHONEOS_DEPLOYMENT_TARGET'].to_f
+          if current > 0 && current < min_ios
+            bc.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = min_ios_str
+          end
+        end
+      end
+    rescue => e
+      Pod::UI.warn "deployment-target bump skipped: #{e.message}"
+    end
+  end
+end

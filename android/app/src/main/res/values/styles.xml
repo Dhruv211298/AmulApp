@@ -1,0 +1,16 @@
+<resources>
+
+    <!-- Base application theme. -->
+    <style name="AppTheme" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <!-- Customize your theme here. -->
+        <item name="android:editTextBackground">@drawable/rn_edit_text_material</item>
+
+        <!-- Solid white window background so there is no flash on launch. -->
+        <item name="android:windowBackground">@color/splash_bg</item>
+
+        <!-- Android 12+ system splash: white background that matches the JS SplashScreen,
+             so the launch icon flows seamlessly into the app's splash. -->
+        <item name="android:windowSplashScreenBackground">@color/splash_bg</item>
+    </style>
+
+</resources>

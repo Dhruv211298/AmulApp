@@ -105,6 +105,7 @@ export function refreshToken() {
         if (data.token_date) await setItem(KEYS.tokenDate, String(data.token_date));
         if (data.nu_plant_code != null) await setItem(KEYS.plantNo, String(data.nu_plant_code));
         if (data.vc_plant_code != null) await setItem(KEYS.plantCode, String(data.vc_plant_code));
+        if (data.nu_section_no != null) await setItem(KEYS.sectionNo, String(data.nu_section_no));
         return String(data.token);
       }
       return null;

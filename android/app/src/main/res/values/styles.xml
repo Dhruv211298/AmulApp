@@ -5,6 +5,14 @@
         <!-- Customize your theme here. -->
         <item name="android:editTextBackground">@drawable/rn_edit_text_material</item>
 
+        <!-- Amul-red accent for AppCompat controls only (text cursors / selection
+             handles in TextInputs), which is on-brand.
+             NOTE: the native date/time PICKER dialogs are intentionally NOT
+             themed here — they are left to Android's default OS colours, so the
+             picker looks like the stock system picker. -->
+        <item name="colorAccent">@color/amul_red</item>
+        <item name="colorControlActivated">@color/amul_red</item>
+
         <!-- Solid white window background so there is no flash on launch. -->
         <item name="android:windowBackground">@color/splash_bg</item>
 

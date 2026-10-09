@@ -1,3 +1,5 @@
 <resources>
     <color name="splash_bg">#FFFFFF</color>
+    <!-- Amul brand red — accent for native controls incl. the date/time pickers. -->
+    <color name="amul_red">#E3001B</color>
 </resources>

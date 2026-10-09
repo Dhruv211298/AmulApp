@@ -15,6 +15,9 @@ export const KEYS = {
   // Both are '' for students, who have no plant.
   plantNo: 'plant_no',
   plantCode: 'plant_code',
+  // Section of the logged-in employee (view_hr_mst_emp.nu_section_no), refreshed
+  // at every login alongside the plant. '' for students / unset.
+  sectionNo: 'section_no',
   isRegistered: 'is_registered',
   apiToken: 'api_token',
   tokenDate: 'token_date',
@@ -48,7 +51,7 @@ const SESSION_KEYS = [KEYS.apiToken, KEYS.tokenDate, KEYS.pinAttempts, KEYS.pinL
 // this file, and a cycle between them would leave one of the two half-loaded).
 const ACCOUNT_KEYS = [
   KEYS.userPin, KEYS.userId, KEYS.userName, KEYS.username,
-  KEYS.userType, KEYS.plantNo, KEYS.plantCode, KEYS.isRegistered, KEYS.sidebarMenu, KEYS.sidebarTree, KEYS.biometricEnabled,
+  KEYS.userType, KEYS.plantNo, KEYS.plantCode, KEYS.sectionNo, KEYS.isRegistered, KEYS.sidebarMenu, KEYS.sidebarTree, KEYS.biometricEnabled,
   ...SESSION_KEYS,
 ];
 

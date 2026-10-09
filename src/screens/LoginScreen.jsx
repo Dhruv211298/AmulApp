@@ -935,6 +935,8 @@ const LoginScreen = ({ navigation, route }) => {
         await setItems({
           [KEYS.plantNo]: data.nu_plant_code || '',
           [KEYS.plantCode]: data.vc_plant_code || '',
+          // Section, refreshed every login alongside the plant (see above).
+          [KEYS.sectionNo]: data.nu_section_no || '',
         });
         // Load THIS user's sidebar menu (app_menu.php filters by user_type) so the
         // drawer shows the correct items. Non-fatal: falls back to cache on error.

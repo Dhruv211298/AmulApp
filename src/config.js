@@ -79,6 +79,28 @@ export const ENDPOINTS = {
   // plant_name}]}. Resolved against BASE_URL by apiPost().
   dilPlantList: 'get_dil_plant_list.php',
 
+  // DIL Entry — today's vehicles for the Vehicle Number type-ahead. Takes
+  // {plant_code} (the top dropdown's selected plant) and returns {data:[{
+  // vehicle_no, driver_nm, dil_no}]} for vehicles that reported today at that
+  // plant. Selecting a suggestion fills the vehicle number + driver name.
+  dilVehicleList: 'get_dil_vehicle_list.php',
+
+  // DIL Entry — active dispatch docks for the "Dock Selection" dropdown (shown
+  // after the LR Number field). Takes {plant_code} (the top dropdown's selected
+  // plant) and returns {data:[{dock_no, dock_name}]}. Resolved against BASE_URL.
+  dilDockList: 'get_dil_dock_list.php',
+
+  // DIL Entry — dispatch record (prod_dtl_data form 1170) + the 3 photos.
+  // Called on Save/Submit when a dock is selected and at least one photo is
+  // taken. Inserts first time / updates after, and stores nu_data_no back on
+  // the DIL master. Heavy (base64 images) — call with a longer timeout.
+  dilDispatchSave: 'dil_dispatch_save.php',
+
+  // DIL Entry — serve ONE saved dispatch photo (form 1170) as a base64 data
+  // URI, for the "View" button on a re-opened DIL's Loading Photos tiles.
+  // Takes {dil_no, slot} where slot is vehicle | before | after.
+  dilDispatchImage: 'dil_dispatch_image.php',
+
   // Visitor Entry. These live under /api_s (NOT /app_api), so they are given as
   // full URLs. They take/return JSON (not the app's usual FormData), so the
   // screen posts JSON through the bounded fetch helpers rather than apiPost.

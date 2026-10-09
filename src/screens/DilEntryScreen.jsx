@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,8 @@ import {
   Modal,
   Pressable,
   Image,
+  ActivityIndicator,
+  AppState,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import { useFocusEffect } from '@react-navigation/native';
@@ -20,8 +22,112 @@ import BrandLoader from '../components/BrandLoader';
 import QrScanner from '../components/QrScanner';
 import ScannerBoundary from '../components/ScannerBoundary';
 import { MSG } from '../constants/messages';
+import { Camera, useCameraDevice } from 'react-native-vision-camera';
+import RNFS from 'react-native-fs';
+import ImageResizer from '@bam.tech/react-native-image-resizer';
+import DateTimePicker, {
+  DateTimePickerAndroid,
+} from '@react-native-community/datetimepicker';
+import Svg, { Rect, Line, Path } from 'react-native-svg';
+
+// Small calendar glyph (drawn with SVG, no asset) for the date-time fields so
+// they read as "pick a date", not a dropdown.
+const CalendarIcon = ({ size = 18, color = COLORS.muted }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Rect x="3" y="4.5" width="18" height="16" rx="2.5" stroke={color} strokeWidth="1.8" />
+    <Line x1="3" y1="9" x2="21" y2="9" stroke={color} strokeWidth="1.8" />
+    <Line x1="8" y1="2.5" x2="8" y2="6" stroke={color} strokeWidth="1.8" strokeLinecap="round" />
+    <Line x1="16" y1="2.5" x2="16" y2="6" stroke={color} strokeWidth="1.8" strokeLinecap="round" />
+  </Svg>
+);
+
+// Chevron for the collapsible section headers — points down when open, right
+// when collapsed.
+const Chevron = ({ open, size = 18, color = COLORS.primaryRed }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Path
+      d={open ? 'M6 9l6 6 6-6' : 'M9 6l6 6-6 6'}
+      stroke={color}
+      strokeWidth="2.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </Svg>
+);
+
+// Tappable section header (the red bar) that collapses/expands its section. Same
+// bar as before, with a chevron added on the right.
+const CollapsibleHeader = ({ title, open, onPress }) => (
+  <TouchableOpacity
+    style={[styles.sectionHeader, styles.sectionHeaderToggle]}
+    onPress={onPress}
+    activeOpacity={0.7}
+    accessibilityRole="button"
+    accessibilityLabel={`${open ? 'Collapse' : 'Expand'} ${title}`}
+  >
+    <Text style={[styles.sectionHeaderText, styles.sectionHeaderTextFlex]} numberOfLines={2}>
+      {title}
+    </Text>
+    <Chevron open={open} />
+  </TouchableOpacity>
+);
 
 const QR_ICON = require('../assets/qr_scan.png');
+const CAMERA_ICON = require('../assets/camera.png');
+
+// Load photos: downscale to keep BOTH the upload and the in-memory base64 light
+// while a number plate stays readable. 1280 @ 72 is roughly half the bytes of
+// 1600 @ 80 and still clearly legible for a plate that fills much of the frame.
+const LOAD_PHOTO_SPEC = { maxW: 1280, maxH: 1280, quality: 72 };
+
+// The three dispatch photos, in display order. key -> tile label.
+const LOAD_PHOTOS = [
+  { key: 'vehicle_front', label: 'Vehicle Front With Number Plate' },
+  { key: 'before_loading', label: 'Before Loading' },
+  { key: 'after_loading', label: 'After Loading' },
+];
+
+// Tile key -> the slot name the image-serve endpoint expects.
+const SLOT_API = {
+  vehicle_front: 'vehicle',
+  before_loading: 'before',
+  after_loading: 'after',
+};
+
+// Loading date-times are shown to the user as "DD-MM-YYYY HH:MM" and chosen via
+// a date-then-time picker (no free typing). These helpers convert between that
+// display string and a Date.
+const pad2 = n => String(n).padStart(2, '0');
+const fmtDateTime = d =>
+  `${pad2(d.getDate())}-${pad2(d.getMonth() + 1)}-${d.getFullYear()} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+const parseDateTime = s => {
+  const m = /^(\d{2})-(\d{2})-(\d{4})\s+(\d{2}):(\d{2})$/.exec(String(s || '').trim());
+  if (!m) return null;
+  const d = new Date(+m[3], +m[2] - 1, +m[1], +m[4], +m[5], 0, 0);
+  return isNaN(d.getTime()) ? null : d;
+};
+// A "DD-MM-YYYY HH:MM" display value -> ISO 8601 "YYYY-MM-DDTHH:MM:00" for SQL
+// (parsed the same regardless of the server's DATEFORMAT). '' when unset.
+const toSqlDateTime = s => {
+  const d = parseDateTime(s);
+  if (!d) return '';
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(
+    d.getHours(),
+  )}:${p(d.getMinutes())}:00`;
+};
+// Strip the "data:image/...;base64," prefix off a data URI (keep the payload).
+const base64Only = uri => {
+  const s = String(uri || '');
+  const i = s.indexOf('base64,');
+  return i >= 0 ? s.slice(i + 7) : s;
+};
+// SQL "YYYY-MM-DD HH:MM" (what rtype 1 returns for the loading times) back to
+// the on-screen "DD-MM-YYYY HH:MM". '' when not a match.
+const sqlToDisplayDt = s => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/.exec(String(s || '').trim());
+  return m ? `${m[3]}-${m[2]}-${m[1]} ${m[4]}:${m[5]}` : '';
+};
 
 // Product / batch labels may be QR or 1D barcodes, so accept both.
 const SCAN_CODE_TYPES = [
@@ -73,6 +179,16 @@ const fmtQty = v => {
   return Number.isFinite(n) ? String(n) : String(v == null ? '' : v);
 };
 
+// Reasons offered when a DIL is submitted with LESS than the planned quantity.
+// Picking a reason is mandatory; "Other" additionally requires a typed note.
+const SHORT_REASONS = [
+  'Stock shortage',
+  'Vehicle full / no space',
+  'Quality hold',
+  'Customer reduced order',
+  'Other',
+];
+
 // SAP dates are "YYYYMMDD". Render as "01 Sep 2026"; pass anything else through.
 const fmtSapDate = v => {
   const s = String(v == null ? '' : v);
@@ -108,10 +224,76 @@ const Label = ({ children, required }) => (
   </Text>
 );
 
+// One dispatch-photo slot.
+//  * Empty  -> dashed tile with the camera icon + label; tapping captures.
+//  * Filled -> a freshly captured preview OR an "Uploaded" state (re-opened
+//    DIL), each with a two-button action bar: "View" (opens the photo) and
+//    "Replace" (re-captures). `image` = a freshly captured data URI;
+//    `uploaded` = a photo for this slot is already stored on the server.
+const PhotoTile = ({ label, image, uploaded, onPress, onView, required }) => {
+  if (image || uploaded) {
+    return (
+      <View style={styles.photoTile}>
+        <View style={styles.photoTileBody}>
+          {image ? (
+            <Image source={{ uri: image }} style={styles.photoTileImgFill} resizeMode="cover" />
+          ) : (
+            <View style={styles.photoTileEmpty}>
+              <Text style={styles.photoTileUploaded}>✓ Uploaded</Text>
+              <Text style={styles.photoTileLabel}>{label}</Text>
+            </View>
+          )}
+        </View>
+        <View style={styles.photoTileActions}>
+          <TouchableOpacity
+            style={styles.photoTileActionBtn}
+            onPress={onView}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel={`View ${label}`}
+          >
+            <Text style={styles.photoTileActionText}>View</Text>
+          </TouchableOpacity>
+          <View style={styles.photoTileActionDivider} />
+          <TouchableOpacity
+            style={styles.photoTileActionBtn}
+            onPress={onPress}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel={`Replace ${label}`}
+          >
+            <Text style={[styles.photoTileActionText, styles.photoTileActionReplace]}>Replace</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+  return (
+    <TouchableOpacity
+      style={[styles.photoTile, styles.photoTileEmptyBorder]}
+      onPress={onPress}
+      activeOpacity={0.85}
+      accessibilityRole="button"
+      accessibilityLabel={`Capture ${label}`}
+    >
+      <View style={styles.photoTileEmpty}>
+        <Image source={CAMERA_ICON} style={styles.photoTileIcon} resizeMode="contain" />
+        <Text style={styles.photoTileLabel}>
+          {label}
+          {required ? <Text style={styles.requiredMark}> *</Text> : null}
+        </Text>
+      </View>
+    </TouchableOpacity>
+  );
+};
+
 const DilEntryScreen = () => {
   // From the session, not from the form.
   const [plantCode, setPlantCode] = useState('');
   const [plantNo, setPlantNo] = useState('');
+  // Logged-in employee's section (view_hr_mst_emp.nu_section_no), cached at
+  // login under KEYS.sectionNo and sent with the DIL on save/submit.
+  const [sectionNo, setSectionNo] = useState('');
   const [plantLoaded, setPlantLoaded] = useState(false);
 
   // Typed by the user.
@@ -127,6 +309,81 @@ const DilEntryScreen = () => {
   const [driverName, setDriverName] = useState('');
   const [mobileNo, setMobileNo] = useState('');
   const [vehicleNo, setVehicleNo] = useState('');
+  const [lrNumber, setLrNumber] = useState(''); // LR (lorry receipt) number — mandatory
+  const [sealNo, setSealNo] = useState(''); // seal number 1 — optional, alphanumeric (max 30)
+  const [sealNo2, setSealNo2] = useState(''); // seal number 2 — optional (a 2nd seal is sometimes used)
+  const [vehicleTemp, setVehicleTemp] = useState(''); // vehicle temperature — optional, numeric, +/- allowed
+
+  // Dispatch photos (base64 data URIs) — vehicle front, before- and after-
+  // loading. All three are mandatory to SUBMIT. Held in state; upload wiring is
+  // added with the backend step.
+  const [loadPhotos, setLoadPhotos] = useState({
+    vehicle_front: null,
+    before_loading: null,
+    after_loading: null,
+  });
+  // Photos already stored on the server for a re-opened DIL (file names per
+  // slot) + whether a dispatch (form-1170) row already exists. A slot counts as
+  // "has a photo" if it has a freshly captured one OR an existing uploaded one.
+  const [existingPhotos, setExistingPhotos] = useState({
+    vehicle_front: null,
+    before_loading: null,
+    after_loading: null,
+  });
+  const [dispatchExists, setDispatchExists] = useState(false);
+  // Full-screen photo viewer (the tiles' "View" button). uri is a data URI:
+  // a freshly captured photo is shown straight away; an already-uploaded one
+  // is fetched from the server (by slot) as base64 on demand.
+  const [photoViewer, setPhotoViewer] = useState({
+    open: false,
+    uri: null,
+    loading: false,
+    label: '',
+  });
+  // True while the background SAP reconcile runs after a draft is opened. The
+  // form is already usable; this just shows a small "Syncing…" note so the user
+  // knows saved products may still update.
+  const [syncingSaved, setSyncingSaved] = useState(false);
+  // Loading date-times ("DD-MM-YYYY HH:MM") — chosen via the date-then-time
+  // picker below. Optional.
+  const [loadStartTime, setLoadStartTime] = useState('');
+  const [loadEndTime, setLoadEndTime] = useState('');
+  // Date-time picker: which field it's editing, which step, and the draft being
+  // assembled (date picked first, then hour/minute).
+  const [dtPickerFor, setDtPickerFor] = useState(null); // 'start' | 'end' | null (iOS modal)
+  const [dtDraft, setDtDraft] = useState(new Date());
+
+  // Camera (vision-camera, same pattern as VisitorEntry).
+  const [hasCamPermission, setHasCamPermission] = useState(false);
+  const [cameraFor, setCameraFor] = useState(null); // one of LOAD_PHOTOS keys | null
+  const [isFrontCamera, setIsFrontCamera] = useState(false);
+  const camDevice = useCameraDevice(isFrontCamera ? 'front' : 'back');
+  const camRef = useRef(null);
+
+  // Collapsible sections — all expanded by default. collapsed[key] === true
+  // hides that section's body (header stays, with the chevron, so it can reopen).
+  const [collapsed, setCollapsed] = useState({});
+  const toggleSection = useCallback(
+    k => setCollapsed(p => ({ ...p, [k]: !p[k] })),
+    [],
+  );
+
+  // App foreground/background — used to pause the Live Stock polling while the
+  // app is in the background (no point hitting the network when unseen).
+  const [appActive, setAppActive] = useState(true);
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', s =>
+      setAppActive(s === 'active'),
+    );
+    return () => sub.remove();
+  }, []);
+
+  // Vehicle Number type-ahead. The suggestion list is today's vehicles for the
+  // selected (top-dropdown) plant, fetched once per plant and filtered on the
+  // client as the user types. Selecting one fills the vehicle AND driver name.
+  // Free typing is always allowed — suggestions are assistance, not a gate.
+  const [vehicleSuggest, setVehicleSuggest] = useState([]); // [{vehicle_no, driver_nm}]
+  const [vehicleSuggestOpen, setVehicleSuggestOpen] = useState(false);
 
   // Product list, fetched from the RFC on the same button press.
   const [products, setProducts] = useState([]);
@@ -145,6 +402,14 @@ const DilEntryScreen = () => {
   const [dilPlant, setDilPlant] = useState(null); // selected {plant_code, plant_name} | null
   const [plantPickerOpen, setPlantPickerOpen] = useState(false);
   const [plantQuery, setPlantQuery] = useState(''); // search text in the plant picker
+
+  // Dock Selection — active docks for the chosen plant (get_dil_dock_list.php),
+  // reloaded whenever the top Plant dropdown changes. Selection = nu_doc_no id.
+  const [docks, setDocks] = useState([]); // [{dock_no, dock_name}]
+  const [dockNo, setDockNo] = useState(''); // selected nu_doc_no (string) | ''
+  const [docksLoading, setDocksLoading] = useState(false);
+  const [dockPickerOpen, setDockPickerOpen] = useState(false);
+  const [dockQuery, setDockQuery] = useState(''); // search text in the dock picker
   const [scannerOpen, setScannerOpen] = useState(false);
   // What a scan should fill: 'product' (pick from dropdown) or
   // { ebelp, index } (a batch row's number). Null when the scanner is closed.
@@ -171,6 +436,13 @@ const DilEntryScreen = () => {
   // EBELP strings.
   const [addedEbelps, setAddedEbelps] = useState([]);
 
+  // Guard against double-submit of a batch. savingBatchRef blocks re-entry
+  // SYNCHRONOUSLY (a ref updates immediately, so rapid taps can't slip a second
+  // save through before a re-render); savingBatchIdx just drives the button's
+  // disabled / "saving" look.
+  const savingBatchRef = useRef(false);
+  const [savingBatchIdx, setSavingBatchIdx] = useState(null);
+
   // Optional pallet detail (whole DIL): number of pallets + weight per pallet.
   const [palletQty, setPalletQty] = useState('');
   const [palletWeight, setPalletWeight] = useState('');
@@ -179,14 +451,23 @@ const DilEntryScreen = () => {
   const [saving, setSaving] = useState(false);
   const [saveCaption, setSaveCaption] = useState('Saving');
 
+  // Short-submit reason modal. When Submit is tapped with any product below its
+  // planned quantity, this opens to capture WHY (mandatory) before submitting.
+  const [shortModalOpen, setShortModalOpen] = useState(false);
+  const [shortLinesText, setShortLinesText] = useState(''); // the shortfall list
+  const [shortReason, setShortReason] = useState(null);     // chosen reason
+  const [shortNote, setShortNote] = useState('');           // optional / "Other" note
+
   const loadPlant = useCallback(async () => {
-    let [code, no] = await Promise.all([
+    let [code, no, sect] = await Promise.all([
       getItem(KEYS.plantCode),
       getItem(KEYS.plantNo),
+      getItem(KEYS.sectionNo),
     ]);
 
     code = (code || '').trim();
     no = (no || '').trim();
+    sect = (sect || '').trim();
 
     // Self-heal: if plant is missing from storage (e.g. session predates plantCode caching
     // or token checker was refreshed on the server), query tokenCheck to fetch the latest plant.
@@ -214,6 +495,10 @@ const DilEntryScreen = () => {
               no = String(data.nu_plant_code).trim();
               await setItem(KEYS.plantNo, no);
             }
+            if (data.nu_section_no != null) {
+              sect = String(data.nu_section_no).trim();
+              await setItem(KEYS.sectionNo, sect);
+            }
           }
         }
       } catch (e) {
@@ -223,6 +508,7 @@ const DilEntryScreen = () => {
 
     setPlantCode(code);
     setPlantNo(no);
+    setSectionNo(sect);
     setPlantLoaded(true);
 
     if (__DEV__) {
@@ -279,6 +565,184 @@ const DilEntryScreen = () => {
       plantDefaultedRef.current = true;
     }
   }, [dilPlants, plantCode]);
+
+  // Load today's vehicle suggestions for the selected (top-dropdown) plant.
+  // Re-runs whenever the chosen plant changes, so the Vehicle Number type-ahead
+  // always reflects the plant currently selected. Non-fatal: on any failure the
+  // list is simply empty and the field behaves as a plain input.
+  useEffect(() => {
+    const code = (dilPlant && dilPlant.plant_code) || '';
+    if (!code) {
+      setVehicleSuggest([]);
+      return;
+    }
+    let alive = true;
+    (async () => {
+      try {
+        const res = await apiPost(ENDPOINTS.dilVehicleList, { plant_code: code });
+        const list = Array.isArray(res) ? res : (res && res.data) || [];
+        if (alive && Array.isArray(list)) setVehicleSuggest(list);
+      } catch (e) {
+        if (alive) setVehicleSuggest([]);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dilPlant]);
+
+  // Load the dispatch docks for the selected (top-dropdown) plant. Re-runs when
+  // the chosen plant changes so the Dock Selection dropdown always matches the
+  // current plant. The previously chosen dock is NOT cleared here (so reopening
+  // a saved DIL keeps its dock); a MANUAL plant change clears it at the picker.
+  useEffect(() => {
+    const code = (dilPlant && dilPlant.plant_code) || '';
+    if (!code) {
+      setDocks([]);
+      return;
+    }
+    let alive = true;
+    setDocksLoading(true);
+    (async () => {
+      try {
+        const res = await apiPost(ENDPOINTS.dilDockList, { plant_code: code });
+        const list = Array.isArray(res) ? res : (res && res.data) || [];
+        if (alive && Array.isArray(list)) setDocks(list);
+      } catch (e) {
+        if (alive) setDocks([]);
+      } finally {
+        if (alive) setDocksLoading(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [dilPlant]);
+
+  // Ask for camera permission once on mount (v4 returns 'granted', v3
+  // 'authorized'). Non-fatal — the camera screen shows a prompt if denied.
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const status = await Camera.requestCameraPermission();
+        if (mounted) {
+          setHasCamPermission(status === 'granted' || status === 'authorized');
+        }
+      } catch (e) {}
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  // Capture a dispatch photo: grab the best frame, downscale + strip EXIF, read
+  // it as base64, store under the active key, then delete both temp files.
+  const takePhoto = useCallback(async () => {
+    if (!camRef.current || !cameraFor) return;
+    try {
+      const photo = await camRef.current.takePhoto({
+        qualityPrioritization: 'quality',
+      });
+      const originalPath = photo.path.replace('file://', '');
+      const resized = await ImageResizer.createResizedImage(
+        originalPath,
+        LOAD_PHOTO_SPEC.maxW,
+        LOAD_PHOTO_SPEC.maxH,
+        'JPEG',
+        LOAD_PHOTO_SPEC.quality,
+        0, // rotation — EXIF orientation already applied
+        undefined, // outputPath — library picks a temp file
+        false, // keepMeta: strip EXIF (drops GPS/device tags, smaller)
+        { mode: 'contain', onlyScaleDown: true },
+      );
+      const base64 = await RNFS.readFile(resized.uri, 'base64');
+      const dataUri = `data:image/jpeg;base64,${base64}`;
+      const key = cameraFor;
+      setLoadPhotos(prev => ({ ...prev, [key]: dataUri }));
+      try { await RNFS.unlink(resized.uri); } catch (e) {}
+      try { await RNFS.unlink(originalPath); } catch (e) {}
+      setCameraFor(null);
+    } catch (e) {
+      Alert.alert('Camera', 'Could not capture the photo. Please try again.');
+    }
+  }, [cameraFor]);
+
+  // ---- Loading date-time picker (native OS picker) -------------------------
+  const applyDt = useCallback((which, dateObj) => {
+    const s = fmtDateTime(dateObj);
+    if (which === 'start') setLoadStartTime(s);
+    else setLoadEndTime(s);
+  }, []);
+
+  // Open the native picker on the chosen field, seeded with its current value.
+  // Android has no combined datetime dialog, so chain date -> time. iOS shows a
+  // single inline datetime picker in a small modal (state below).
+  const openDtPicker = useCallback(
+    (which, currentStr) => {
+      const base = parseDateTime(currentStr) || new Date();
+      if (Platform.OS === 'android') {
+        DateTimePickerAndroid.open({
+          value: base,
+          mode: 'date',
+          is24Hour: true,
+          onChange: (ev, pickedDate) => {
+            if (ev.type !== 'set' || !pickedDate) return;
+            DateTimePickerAndroid.open({
+              value: pickedDate,
+              mode: 'time',
+              is24Hour: true,
+              onChange: (ev2, pickedTime) => {
+                if (ev2.type !== 'set' || !pickedTime) return;
+                const final = new Date(pickedDate);
+                final.setHours(pickedTime.getHours(), pickedTime.getMinutes(), 0, 0);
+                applyDt(which, final);
+              },
+            });
+          },
+        });
+      } else {
+        setDtDraft(base);
+        setDtPickerFor(which);
+      }
+    },
+    [applyDt],
+  );
+
+  // iOS modal confirm.
+  const commitDt = useCallback(() => {
+    applyDt(dtPickerFor, dtDraft);
+    setDtPickerFor(null);
+  }, [applyDt, dtPickerFor, dtDraft]);
+
+  // The suggestions actually shown under the Vehicle Number field: filtered by
+  // whatever is typed (vehicle number OR driver name), de-duplicated by vehicle
+  // number, and capped so the inline list never grows unwieldy. An empty field
+  // (just focused) shows the most recent vehicles.
+  const vehicleSuggestFiltered = useMemo(() => {
+    const q = String(vehicleNo || '').trim().toUpperCase();
+    const seen = {};
+    const out = [];
+    for (let i = 0; i < vehicleSuggest.length; i++) {
+      const v = vehicleSuggest[i] || {};
+      const veh = String(v.vehicle_no || '').toUpperCase();
+      if (!veh) continue;
+      // While typing, match against vehicle number or driver name. When the
+      // typed text already equals a vehicle exactly, don't bother suggesting it.
+      if (q) {
+        if (veh === q) continue;
+        const drv = String(v.driver_nm || '').toUpperCase();
+        if (veh.indexOf(q) === -1 && drv.indexOf(q) === -1) continue;
+      }
+      const key = veh + '|' + String(v.driver_nm || '').toUpperCase();
+      if (seen[key]) continue;
+      seen[key] = true;
+      out.push(v);
+      if (out.length >= 8) break;
+    }
+    return out;
+  }, [vehicleSuggest, vehicleNo]);
 
   // What to SHOW. Prefer the readable short code, but fall back to the numeric
   // plant when the short code is missing.
@@ -459,6 +923,7 @@ const DilEntryScreen = () => {
         const res = await apiPost(ENDPOINTS.dilApi, {
           rtype: '8',
           employee_id: employeeId,
+          dil_no: dilNo.trim(), // so the backend excludes THIS DIL from "reserved"
           from_plant_code: fromPlant,
           to_plant_code: toPlant,
           plant_code: fromPlant || toPlant, // legacy fallback
@@ -481,7 +946,7 @@ const DilEntryScreen = () => {
         setStockRefreshing(false);
       }
     },
-    [products, plantCode, plantNo],
+    [products, plantCode, plantNo, dilNo],
   );
 
   const fetchDilDetails = useCallback(async () => {
@@ -498,6 +963,16 @@ const DilEntryScreen = () => {
     setDriverName('');
     setMobileNo('');
     setVehicleNo('');
+    setLrNumber('');
+    setSealNo('');
+    setSealNo2('');
+    setVehicleTemp('');
+    setLoadPhotos({ vehicle_front: null, before_loading: null, after_loading: null });
+    setExistingPhotos({ vehicle_front: null, before_loading: null, after_loading: null });
+    setDispatchExists(false);
+    setLoadStartTime('');
+    setLoadEndTime('');
+    setDockNo('');
     setPalletQty('');
     setPalletWeight('');
     setShowEntry(false);
@@ -505,20 +980,34 @@ const DilEntryScreen = () => {
     try {
       const employeeId = (await getItem(KEYS.userId)) || '';
 
-      // 1. Is this DIL already in our system? Block if submitted; remember a
-      //    draft so we can resume it.
-      let existing = null;
-      try {
-        const ex = await apiPost(ENDPOINTS.dilApi, {
-          rtype: '1',
-          employee_id: employeeId,
-          dil_no: dil,
+      // Steps 1 and 2 run IN PARALLEL to cut the wait on slow networks:
+      //   rtype 1 — is this DIL already in our system? (fast DB lookup; a draft
+      //             is remembered so we can resume it, a submitted one blocks).
+      //   rtype 2 — the product list (the slow call: the backend may probe the
+      //             RFC / SAP across a date window).
+      // They are independent, so firing both at once makes the total wait the
+      // slower of the two (the product list) instead of their sum.
+      const existingPromise = apiPost(
+        ENDPOINTS.dilApi,
+        { rtype: '1', employee_id: employeeId, dil_no: dil },
+        { timeoutMs: 30000 },
+      )
+        .then(ex => (ex && ex.data ? ex.data : null))
+        .catch(e => {
+          if (e && e.sessionExpired) throw e; // real auth failure -> surface it
+          return null; // status check failed -> treat as a fresh entry
         });
-        existing = ex && ex.data ? ex.data : null;
-      } catch (e) {
-        if (e && e.sessionExpired) throw e;
-        // Status check failed — proceed as a fresh entry.
-      }
+      const listPromise = loadProductList(dil, dateStr);
+
+      // A rejection from Promise.all here means a request FAILED (timeout /
+      // dropped connection / server error) — NOT that the DIL is missing. A
+      // genuinely empty product list resolves to [] and is handled just below.
+      const [existingResult, list] = await Promise.all([
+        existingPromise,
+        listPromise,
+      ]);
+      let existing = existingResult;
+
       // Already submitted (2) or weighbridge-complete (4) -> cannot re-enter.
       if (
         existing &&
@@ -531,8 +1020,8 @@ const DilEntryScreen = () => {
         return;
       }
 
-      // 2. Load the product list.
-      const list = await loadProductList(dil, dateStr);
+      // 2. Product list (fetched above). An EMPTY list is the only real
+      // "not found": the DIL/date genuinely has no products in SAP.
       if (!list.length) {
         Alert.alert('No Data Found...!', 'Please verify DIL No & Date.');
         return;
@@ -552,93 +1041,73 @@ const DilEntryScreen = () => {
         if (ad) setDilDate(ad);
       }
 
-      // 2b. Reconcile our saved data against the CURRENT SAP list. Products can
-      // change in SAP after we first saved batches (dropped, or qty cut because
-      // stock wasn't available). This releases stale reservations / re-syncs
-      // quantities on the server, then we reload the cleaned state and tell the
-      // user what changed. Best effort — never blocks opening the DIL.
-      if (
-        existing &&
-        String(existing.status) === '1' &&
-        existing.products &&
-        existing.products.length
-      ) {
-        try {
-          const empId = (await getItem(KEYS.userId)) || '';
-          const rec = await apiPost(ENDPOINTS.dilApi, {
-            rtype: '9',
-            employee_id: empId,
-            dil_no: dil,
-            products: JSON.stringify(
-              list.map(p => ({
-                li: String(p.EBELP),
-                mc: String(p.MATNR || ''),
-                qty: String(p.MENGE || ''),
-              })),
-            ),
-          });
-          const removed = (rec && rec.removed) || [];
-          const reduced = (rec && rec.reduced) || [];
-          const changed = (rec && rec.changed) || [];
-          if (removed.length || reduced.length || changed.length) {
-            // Reload the corrected saved state so the card reflects the cleanup.
-            try {
-              const ex2 = await apiPost(ENDPOINTS.dilApi, {
-                rtype: '1',
-                employee_id: empId,
-                dil_no: dil,
-              });
-              if (ex2 && ex2.data) existing = ex2.data;
-            } catch (e2) {
-              if (e2 && e2.sessionExpired) throw e2;
-            }
-            const msg = [];
-            removed.forEach(c =>
-              msg.push(`• ${c}: removed in SAP — its saved batches were cleared.`),
-            );
-            reduced.forEach(x =>
-              msg.push(
-                `• ${x.code}: quantity changed ${x.old} → ${x.new}. Saved batches exceeded the new quantity, so they were cleared — please re-enter.`,
-              ),
-            );
-            changed.forEach(x =>
-              msg.push(`• ${x.code}: quantity updated ${x.old} → ${x.new}.`),
-            );
-            Alert.alert(
-              'DIL updated in SAP',
-              `Some products changed since you last saved:\n\n${msg.join('\n')}`,
-            );
-          }
-        } catch (e) {
-          if (e && e.sessionExpired) throw e;
-          // Reconcile is best-effort; carry on with what we have.
-        }
-      }
-
-      // Claim the DIL in our master table now (status 1) with the ACTUAL DIL
-      // date, so this refresh doesn't overwrite it back to the selected date.
-      ensureDraft(list[0], dil, actualApiDate);
-
-      // Live stock for every product in the DIL (summary table).
-      fetchAllStock(list);
-
-      // 3a. Resume a saved draft — prefill header + rebuild added products.
-      if (existing && String(existing.status) === '1') {
-        setDriverName(String(existing.driver_name || '').toUpperCase());
+      // Reusable: apply a resolved draft (header + dispatch + saved batches) to
+      // the UI. Used for the initial paint AND after the background reconcile.
+      const applyExistingDraft = ex => {
+        setDriverName(String(ex.driver_name || '').toUpperCase());
         setMobileNo(
-          String(existing.mobile_no || '').replace(/[^0-9]/g, '').slice(0, 10),
+          String(ex.mobile_no || '').replace(/[^0-9]/g, '').slice(0, 10),
         );
         setVehicleNo(
-          String(existing.vehicle_no || '')
-            .toUpperCase()
-            .replace(/[^A-Z0-9]/g, ''),
+          String(ex.vehicle_no || '').toUpperCase().replace(/[^A-Z0-9]/g, ''),
         );
-        setPalletQty(String(existing.pallet_qty || ''));
-        setPalletWeight(String(existing.pallet_weight || ''));
+        setLrNumber(
+          String(ex.lr_number || '')
+            .toUpperCase()
+            .replace(/[^A-Z0-9]/g, '')
+            .slice(0, 20),
+        );
+        setSealNo(
+          String(ex.seal_no || '')
+            .toUpperCase()
+            .replace(/[^A-Z0-9]/g, '')
+            .slice(0, 30),
+        );
+        setSealNo2(
+          String(ex.seal_no2 || '')
+            .toUpperCase()
+            .replace(/[^A-Z0-9]/g, '')
+            .slice(0, 30),
+        );
+        setVehicleTemp(String(ex.vehicle_temp == null ? '' : ex.vehicle_temp));
+        setDockNo(String(ex.dock_no || ''));
+        setPalletQty(String(ex.pallet_qty || ''));
+        setPalletWeight(String(ex.pallet_weight || ''));
+
+        // Dispatch record (prod_dtl_data form 1170): re-populate seals, temp,
+        // loading times, dock and mark already-uploaded photos.
+        const disp = ex.dispatch;
+        if (disp) {
+          if (disp.seal_1) {
+            setSealNo(
+              String(disp.seal_1).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 30),
+            );
+          }
+          setSealNo2(
+            String(disp.seal_2 || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 30),
+          );
+          setVehicleTemp(String(disp.vehicle_temp == null ? '' : disp.vehicle_temp));
+          if (disp.dock_id) setDockNo(String(disp.dock_id));
+          setLoadStartTime(sqlToDisplayDt(disp.start_loading_dt));
+          setLoadEndTime(sqlToDisplayDt(disp.end_loading_dt));
+          setExistingPhotos({
+            vehicle_front: disp.img_vehicle || null,
+            before_loading: disp.img_before || null,
+            after_loading: disp.img_after || null,
+          });
+          setDispatchExists(true);
+        } else {
+          setExistingPhotos({
+            vehicle_front: null,
+            before_loading: null,
+            after_loading: null,
+          });
+          setDispatchExists(false);
+        }
 
         const added = [];
         const batchMap = {};
-        (existing.products || []).forEach(sp => {
+        (ex.products || []).forEach(sp => {
           const match = list.find(
             p => String(p.EBELP) === String(sp.line_item),
           );
@@ -651,26 +1120,116 @@ const DilEntryScreen = () => {
             saved: true,
             batchId: b.batch_id || null,
           }));
-          // Any product that already has saved batches belongs in the list card
-          // (shown as Pending until its qty is met, then Complete). Previously
-          // only fully-batched products were restored, so a partially-entered
-          // product vanished from the card on reload until it was re-opened and
-          // closed again.
+          // Any product with saved batches belongs on the list card (Pending
+          // until its qty is met, then Complete).
           if ((sp.batches || []).length > 0) {
             added.push(key);
           }
         });
         setBatchesByEbelp(batchMap);
         setAddedEbelps(added);
+      };
+
+      const isDraft = existing && String(existing.status) === '1';
+
+      // ---- PROGRESSIVE PAINT -------------------------------------------
+      // Claim the draft and kick off live stock (both non-blocking), prefill
+      // the header + products from the saved state, then reveal the usable form
+      // IMMEDIATELY. The slower SAP reconcile runs afterwards in the background,
+      // so the user never stares at a blank loader waiting for it. The Live
+      // Stock table already shows "…" placeholders until its data arrives.
+      ensureDraft(list[0], dil, actualApiDate);
+      fetchAllStock(list);
+      if (isDraft) {
+        applyExistingDraft(existing);
       } else {
-        // 3b. Fresh entry: prefill driver from the product header (K-DB only).
+        // Fresh entry: prefill driver from the product header (K-DB only).
         prefillDriverFromHead(list[0]);
       }
-
       setShowEntry(true);
+      setProductsLoading(false); // form is interactive now
+
+      // ---- BACKGROUND RECONCILE ----------------------------------------
+      // Only for drafts that already have saved products. If the DIL changed in
+      // SAP since we saved (a line dropped, a qty cut/updated), the server
+      // releases stale reservations; we re-apply the cleaned state and tell the
+      // user. Never blocks the form — a small "Syncing…" note shows meanwhile.
+      if (isDraft && existing.products && existing.products.length) {
+        setSyncingSaved(true);
+        (async () => {
+          try {
+            const empId = (await getItem(KEYS.userId)) || '';
+            const rec = await apiPost(ENDPOINTS.dilApi, {
+              rtype: '9',
+              employee_id: empId,
+              dil_no: dil,
+              products: JSON.stringify(
+                list.map(p => ({
+                  li: String(p.EBELP),
+                  mc: String(p.MATNR || ''),
+                  qty: String(p.MENGE || ''),
+                })),
+              ),
+            });
+            const removed = (rec && rec.removed) || [];
+            const reduced = (rec && rec.reduced) || [];
+            const changed = (rec && rec.changed) || [];
+            if (removed.length || reduced.length || changed.length) {
+              // Re-apply the corrected saved state so the cards reflect cleanup.
+              try {
+                const ex2 = await apiPost(ENDPOINTS.dilApi, {
+                  rtype: '1',
+                  employee_id: empId,
+                  dil_no: dil,
+                });
+                if (ex2 && ex2.data) applyExistingDraft(ex2.data);
+              } catch (e2) {
+                // reload failed: keep the pre-reconcile view
+              }
+              const msg = [];
+              removed.forEach(c =>
+                msg.push(`• ${c}: removed in SAP — its saved batches were cleared.`),
+              );
+              reduced.forEach(x =>
+                msg.push(
+                  `• ${x.code}: quantity changed ${x.old} → ${x.new}. Saved batches exceeded the new quantity, so they were cleared — please re-enter.`,
+                ),
+              );
+              changed.forEach(x =>
+                msg.push(`• ${x.code}: quantity updated ${x.old} → ${x.new}.`),
+              );
+              Alert.alert(
+                'DIL updated in SAP',
+                `Some products changed since you last saved:\n\n${msg.join('\n')}`,
+              );
+              fetchAllStock(list); // reservations changed -> refresh stock
+            }
+          } catch (e) {
+            // Best effort; the form already works with the saved state.
+          } finally {
+            setSyncingSaved(false);
+          }
+        })();
+      }
     } catch (e) {
-      if (!e || !e.sessionExpired) {
-        Alert.alert('No Data Found...!', 'Please verify DIL No & Date.');
+      // Reaching here means a request FAILED (timeout / dropped connection /
+      // server error) — NOT that the DIL is missing (a missing DIL is handled
+      // above as an empty list). So we never show "verify DIL No & Date" here,
+      // which used to wrongly blame the user's input when the network was slow.
+      if (e && e.sessionExpired) {
+        // Handled by the session layer (it shows its own re-login prompt).
+      } else {
+        const m = String((e && e.message) || '');
+        const network =
+          /time|timed out|connection|network|failed to fetch|empty server response/i.test(
+            m,
+          );
+        Alert.alert(
+          network ? 'Connection problem' : 'Something went wrong',
+          network
+            ? 'The server took too long to respond or the connection dropped. Please check your internet and tap Get DIL Details again.'
+            : 'Could not load the DIL right now. Please try again in a moment.',
+        );
       }
     } finally {
       setProductsLoading(false);
@@ -693,6 +1252,16 @@ const DilEntryScreen = () => {
     setDriverName('');
     setMobileNo('');
     setVehicleNo('');
+    setLrNumber('');
+    setSealNo('');
+    setSealNo2('');
+    setVehicleTemp('');
+    setLoadPhotos({ vehicle_front: null, before_loading: null, after_loading: null });
+    setExistingPhotos({ vehicle_front: null, before_loading: null, after_loading: null });
+    setDispatchExists(false);
+    setLoadStartTime('');
+    setLoadEndTime('');
+    setDockNo('');
     setProducts([]);
     setProductsLoading(false);
     setSelectedEbelp(null);
@@ -852,9 +1421,19 @@ const DilEntryScreen = () => {
   const selectedProduct =
     products.find(p => String(p.EBELP) === String(selectedEbelp)) || null;
 
-  // Label shown for a product: "MATNR - Material Name".
-  const productLabel = p =>
-    `${String(p.MATNR || '')}${p.TXZ01 ? ' - ' + p.TXZ01 : ''}`;
+  // Label shown for a product: "MATNR - Material Name (Line N · Qty)". The line
+  // item + qty distinguish two DIL lines that carry the SAME material, so they
+  // never look like accidental duplicates.
+  const productLabel = p => {
+    const base = `${String(p.MATNR || '')}${p.TXZ01 ? ' - ' + p.TXZ01 : ''}`;
+    const li =
+      p.EBELP !== undefined && p.EBELP !== null && String(p.EBELP) !== ''
+        ? 'Line ' + String(p.EBELP)
+        : '';
+    const qty = p.MENGE ? fmtQty(p.MENGE) + (p.MEINS ? ' ' + p.MEINS : '') : '';
+    const meta = [li, qty].filter(Boolean).join(' · ');
+    return meta ? `${base} (${meta})` : base;
+  };
 
   // Refetch batch stock whenever the selected product changes.
   // Plant: the DIL's supplying / FROM plant (RESWK) — the plant that holds the
@@ -878,8 +1457,10 @@ const DilEntryScreen = () => {
   // AUTO-REFRESH: while the entry module is open, re-pull live stock every 20s
   // so figures stay accurate against other users' reservations — reducing the
   // chance of a wrong entry. Also refreshes the open batch dropdown.
+  // Paused when the app is backgrounded or the Live Stock section is collapsed,
+  // so no network/CPU is spent on data the user can't see.
   useEffect(() => {
-    if (!showEntry) return undefined;
+    if (!showEntry || !appActive || collapsed.stock) return undefined;
     const id = setInterval(() => {
       fetchAllStock();
       const sp = products.find(p => String(p.EBELP) === String(selectedEbelp));
@@ -895,6 +1476,8 @@ const DilEntryScreen = () => {
     return () => clearInterval(id);
   }, [
     showEntry,
+    appActive,
+    collapsed.stock,
     selectedEbelp,
     products,
     plantCode,
@@ -1061,6 +1644,13 @@ const DilEntryScreen = () => {
         return;
       }
 
+      // Double-submit guard: if a save is already running, ignore this tap. The
+      // ref is set BEFORE the first await below, so a rapid second tap is
+      // blocked here instead of firing a duplicate rtype 6 insert.
+      if (savingBatchRef.current) return;
+      savingBatchRef.current = true;
+      setSavingBatchIdx(index);
+
       try {
         const employeeId = (await getItem(KEYS.userId)) || '';
         const res = await apiPost(ENDPOINTS.dilApi, {
@@ -1138,6 +1728,10 @@ const DilEntryScreen = () => {
         if (!e || !e.sessionExpired) {
           Alert.alert('Could not save', 'Please try again.');
         }
+      } finally {
+        // Always release the guard so the next (real) save can proceed.
+        savingBatchRef.current = false;
+        setSavingBatchIdx(null);
       }
     },
     [
@@ -1154,66 +1748,107 @@ const DilEntryScreen = () => {
     ],
   );
 
-  // Save (status 1) or Submit (status 2). Both need the header fields valid and
-  // at least one added product; added products already have balanced batches.
-  const saveEntry = useCallback(
-    async submitStatus => {
-      if (addedEbelps.length === 0) {
-        Alert.alert('Nothing to save', 'Add at least one product first.');
-        return;
-      }
-      // Final submit requires EVERY product line to be fully batched (Complete),
-      // not merely present in the card. A product shown as "Pending" (saved
-      // batches below its required qty) blocks the submit.
-      if (submitStatus === 2) {
-        const incomplete = products
-          .map(p => {
-            const required = parseFloat(p.MENGE) || 0;
-            const rows =
-              batchesByEbelp[p.EBELP] || batchesByEbelp[String(p.EBELP)] || [];
-            const total = rows.reduce(
-              (s, b) => s + (b.saved ? parseFloat(b.qty) || 0 : 0),
-              0,
-            );
-            return { p, required, total };
-          })
-          .filter(
-            x => !(x.required > 0 && Math.abs(x.total - x.required) < 0.0001),
-          );
-        if (incomplete.length > 0) {
-          const lines = incomplete
-            .map(x => {
-              const uom = x.p.MEINS ? ' ' + x.p.MEINS : '';
-              const left = x.required - x.total;
-              return `• ${String(x.p.MATNR || '')} — ${fmtQty(
-                x.total,
-              )} of ${fmtQty(x.required)}${uom} added, ${fmtQty(
-                left,
-              )}${uom} left`;
-            })
-            .join('\n');
-          Alert.alert(
-            'Finish all products first',
-            `You can submit only after every product has its full quantity added.\n\nStill pending:\n${lines}`,
-          );
-          return;
-        }
-      }
-      if (driverName.trim() === '') {
-        Alert.alert('Driver required', 'Please enter the driver name.');
-        return;
-      }
-      if (!MOBILE_RE.test(mobileNo)) {
-        Alert.alert('Invalid mobile', 'Enter a valid 10-digit mobile number.');
-        return;
-      }
-      if (!VEHICLE_RE.test(vehicleNo)) {
-        Alert.alert('Invalid vehicle', 'Enter a valid vehicle number.');
-        return;
-      }
+  // Save (status 1) or Submit (status 2). Both need the header fields valid.
+  // A plain SAVE (draft) may be stored with NO products yet — so the driver /
+  // mobile / vehicle / LR already entered are never lost. Only SUBMIT requires
+  // at least one added product (and every one fully batched).
+  // The actual persist (header + status). Products & batches are already saved
+  // via rtype 6/7, so this only writes the header and the status. allowPartial
+  // is forwarded so a CONFIRMED short submit is accepted by the backend (which
+  // otherwise requires every product fully batched); shortRemark carries the
+  // reason captured in the short-submit modal (empty for a full submit / save).
+  // Write the dispatch record (prod_dtl_data form 1170) + the 3 photos via the
+  // dedicated endpoint. Called from the save flow only when a dock is chosen and
+  // at least one photo exists. Backend inserts first time / updates after and
+  // links nu_data_no on the master. Heavy POST (base64) -> longer timeout.
+  const saveDispatch = useCallback(async () => {
+    let loaded = 0;
+    products.forEach(p => {
+      const rows =
+        batchesByEbelp[p.EBELP] || batchesByEbelp[String(p.EBELP)] || [];
+      loaded += rows.reduce(
+        (s, b) => s + (b.saved ? parseFloat(b.qty) || 0 : 0),
+        0,
+      );
+    });
+    const employeeId = (await getItem(KEYS.userId)) || '';
+    return apiPost(
+      ENDPOINTS.dilDispatchSave,
+      {
+        employee_id: employeeId,
+        dil_no: dilNo.trim(),
+        section_no: String(sectionNo || '').trim(),
+        start_loading_dt: toSqlDateTime(loadStartTime),
+        end_loading_dt: toSqlDateTime(loadEndTime),
+        dock_id: String(dockNo || '').trim(),
+        loaded_qty: String(loaded),
+        vehicle_no: vehicleNo.trim(),
+        vehicle_temp: String(vehicleTemp || '').trim(),
+        seal_1: sealNo.trim(),
+        seal_2: sealNo2.trim(),
+        img_vehicle: loadPhotos.vehicle_front
+          ? base64Only(loadPhotos.vehicle_front)
+          : '',
+        img_before: loadPhotos.before_loading
+          ? base64Only(loadPhotos.before_loading)
+          : '',
+        img_after: loadPhotos.after_loading
+          ? base64Only(loadPhotos.after_loading)
+          : '',
+      },
+      { timeoutMs: 60000 },
+    );
+  }, [
+    products,
+    batchesByEbelp,
+    dilNo,
+    sectionNo,
+    loadStartTime,
+    loadEndTime,
+    dockNo,
+    vehicleNo,
+    vehicleTemp,
+    sealNo,
+    sealNo2,
+    loadPhotos,
+  ]);
 
-      // Products & batches are already persisted (rtype 6/7); this only saves
-      // the header/driver/pallet and the status.
+  // "View" on a photo tile. A freshly captured photo is shown immediately from
+  // its in-memory data URI; an already-uploaded one is fetched from the server
+  // (by slot) as base64. Errors are surfaced and the viewer is closed.
+  const openPhotoViewer = useCallback(
+    async (slotKey, label) => {
+      const fresh = loadPhotos[slotKey];
+      if (fresh) {
+        setPhotoViewer({ open: true, uri: fresh, loading: false, label });
+        return;
+      }
+      if (!existingPhotos[slotKey]) {
+        return;
+      }
+      setPhotoViewer({ open: true, uri: null, loading: true, label });
+      try {
+        const res = await apiPost(
+          ENDPOINTS.dilDispatchImage,
+          { dil_no: dilNo.trim(), slot: SLOT_API[slotKey] },
+          { timeoutMs: 30000 },
+        );
+        if (res && String(res.statusCode) === '200' && res.image) {
+          setPhotoViewer({ open: true, uri: res.image, loading: false, label });
+        } else {
+          setPhotoViewer({ open: false, uri: null, loading: false, label: '' });
+          Alert.alert('View photo', (res && res.message) || 'Could not load the photo.');
+        }
+      } catch (e) {
+        setPhotoViewer({ open: false, uri: null, loading: false, label: '' });
+        Alert.alert('View photo', 'Could not load the photo. Please try again.');
+      }
+    },
+    [loadPhotos, existingPhotos, dilNo],
+  );
+
+  const persistEntry = useCallback(
+    async (submitStatus, allowPartial, shortRemark) => {
       setSaveCaption(submitStatus === 2 ? 'Submitting' : 'Saving');
       setSaving(true);
       try {
@@ -1221,22 +1856,60 @@ const DilEntryScreen = () => {
         const res = await apiPost(ENDPOINTS.dilApi, {
           rtype: '3',
           employee_id: employeeId,
+          section_no: String(sectionNo || '').trim(),
           dil_no: dilNo.trim(),
           driver_name: driverName.trim(),
           mobile_no: mobileNo,
           vehicle_no: vehicleNo,
+          lr_number: lrNumber.trim(),
+          seal_number: sealNo.trim(),
+          seal_number2: sealNo2.trim(),
+          vehicle_temp: String(vehicleTemp || '').trim(),
+          dock_no: String(dockNo || '').trim(),
           pallet_qty: palletQty,
           pallet_weight: palletWeight,
           wb_plant_code: (dilPlant && dilPlant.plant_code) || '', // top dropdown
+          allow_partial: allowPartial ? '1' : '0',
+          short_remark: shortRemark || '',
           status: String(submitStatus),
         });
 
         if (res && String(res.statusCode) === '200') {
+          // Dispatch record (form 1170) + photos — only when a dock is chosen
+          // and at least one photo is taken. Non-fatal: the DIL itself is
+          // already saved, so a failure here just asks the user to save again.
+          let dispatchWarn = '';
+          // Write/refresh the dispatch row when there is a dock and at least one
+          // photo (freshly captured OR already uploaded), or a dispatch row
+          // already exists (so edits to seals/temp/times are saved on re-save).
+          const anyPhoto = !!(
+            loadPhotos.vehicle_front ||
+            loadPhotos.before_loading ||
+            loadPhotos.after_loading ||
+            existingPhotos.vehicle_front ||
+            existingPhotos.before_loading ||
+            existingPhotos.after_loading ||
+            dispatchExists
+          );
+          if (String(dockNo || '').trim() !== '' && anyPhoto) {
+            setSaveCaption('Uploading photos');
+            try {
+              const dres = await saveDispatch();
+              if (!dres || dres.status !== 'success') {
+                dispatchWarn =
+                  '\n\nNote: the dispatch photos/details could not be saved — please Save again.';
+              }
+            } catch (e) {
+              if (e && e.sessionExpired) throw e;
+              dispatchWarn =
+                '\n\nNote: the dispatch photos/details could not be saved — please Save again.';
+            }
+          }
           Alert.alert(
             submitStatus === 2 ? 'Submitted' : 'Saved',
-            submitStatus === 2
+            (submitStatus === 2
               ? 'Data Submitted Successfully...!'
-              : 'Data Save Successfully...!',
+              : 'Data Save Successfully...!') + dispatchWarn,
             // Submit finishes the DIL -> reset for the next one. Save keeps the
             // current DIL loaded so the user can carry on editing.
             [{ text: 'OK', onPress: () => { if (submitStatus === 2) resetAll(); } }],
@@ -1255,6 +1928,94 @@ const DilEntryScreen = () => {
         setSaving(false);
       }
     },
+    [dilNo, driverName, mobileNo, vehicleNo, lrNumber, sealNo, sealNo2, vehicleTemp, dockNo, palletQty, palletWeight, dilPlant, sectionNo, loadPhotos, existingPhotos, dispatchExists, saveDispatch, resetAll],
+  );
+
+  const saveEntry = useCallback(
+    async submitStatus => {
+      if (submitStatus === 2 && addedEbelps.length === 0) {
+        Alert.alert(
+          'Nothing to submit',
+          'Add at least one product before submitting.',
+        );
+        return;
+      }
+      // Header fields are required for BOTH Save and Submit.
+      if (driverName.trim() === '') {
+        Alert.alert('Driver required', 'Please enter the driver name.');
+        return;
+      }
+      if (!MOBILE_RE.test(mobileNo)) {
+        Alert.alert('Invalid mobile', 'Enter a valid 10-digit mobile number.');
+        return;
+      }
+      if (!VEHICLE_RE.test(vehicleNo)) {
+        Alert.alert('Invalid vehicle', 'Enter a valid vehicle number.');
+        return;
+      }
+      if (lrNumber.trim() === '') {
+        Alert.alert('LR Number required', 'Please enter the LR number.');
+        return;
+      }
+      // Dock is mandatory to SUBMIT (a draft can be saved without it).
+      if (submitStatus === 2 && String(dockNo || '').trim() === '') {
+        Alert.alert('Dock required', 'Please select a dock before submitting.');
+        return;
+      }
+      // All three dispatch photos are mandatory to SUBMIT.
+      if (submitStatus === 2) {
+        const missing = LOAD_PHOTOS.filter(
+          ph => !loadPhotos[ph.key] && !existingPhotos[ph.key],
+        );
+        if (missing.length > 0) {
+          Alert.alert(
+            'Photos required',
+            'Please capture these photos before submitting:\n\n' +
+              missing.map(m => '• ' + m.label).join('\n'),
+          );
+          return;
+        }
+      }
+
+      // On SUBMIT: any product short of its full planned qty no longer BLOCKS —
+      // instead we open the reason modal, and submit the reduced quantity only
+      // after the user picks a reason and confirms.
+      if (submitStatus === 2) {
+        const short = products
+          .map(p => {
+            const required = parseFloat(p.MENGE) || 0;
+            const rows =
+              batchesByEbelp[p.EBELP] || batchesByEbelp[String(p.EBELP)] || [];
+            const total = rows.reduce(
+              (s, b) => s + (b.saved ? parseFloat(b.qty) || 0 : 0),
+              0,
+            );
+            return { p, required, total };
+          })
+          .filter(x => x.required > 0 && x.total < x.required - 0.0001);
+        if (short.length > 0) {
+          const lines = short
+            .map(x => {
+              const uom = x.p.MEINS ? ' ' + x.p.MEINS : '';
+              const left = x.required - x.total;
+              return `• ${String(x.p.MATNR || '')} — ${fmtQty(
+                x.total,
+              )} of ${fmtQty(x.required)}${uom} added, ${fmtQty(
+                left,
+              )}${uom} short`;
+            })
+            .join('\n');
+          setShortLinesText(lines);
+          setShortReason(null);
+          setShortNote('');
+          setShortModalOpen(true);
+          return;
+        }
+      }
+
+      // Fully batched submit, or a plain Save -> proceed directly.
+      persistEntry(submitStatus, false, '');
+    },
     [
       addedEbelps,
       products,
@@ -1262,18 +2023,81 @@ const DilEntryScreen = () => {
       driverName,
       mobileNo,
       vehicleNo,
-      palletQty,
-      palletWeight,
-      dilNo,
-      dilPlant,
-      resetAll,
+      lrNumber,
+      persistEntry,
     ],
   );
+
+  // Confirm handler for the short-submit modal: validate the reason (and note
+  // when "Other"), build the stored remark, then submit with allow_partial.
+  const confirmShortSubmit = useCallback(() => {
+    if (!shortReason) {
+      Alert.alert('Reason required', 'Please choose a reason for the short quantity.');
+      return;
+    }
+    const note = shortNote.trim();
+    if (shortReason === 'Other' && note === '') {
+      Alert.alert('Note required', 'Please describe the reason for the short quantity.');
+      return;
+    }
+    const remark =
+      shortReason === 'Other'
+        ? note
+        : note
+        ? `${shortReason} — ${note}`
+        : shortReason;
+    setShortModalOpen(false);
+    persistEntry(2, true, remark);
+  }, [shortReason, shortNote, persistEntry]);
 
   // Inline validation — only flag once the user has typed something, so an
   // untouched field never shows red.
   const mobileInvalid = mobileNo.length > 0 && !MOBILE_RE.test(mobileNo);
   const vehicleInvalid = vehicleNo.length > 0 && !VEHICLE_RE.test(vehicleNo);
+
+  // Full-screen camera — replaces the form while a photo is being captured.
+  if (cameraFor) {
+    if (!camDevice || !hasCamPermission) {
+      return (
+        <View style={styles.camFallback}>
+          <Text style={styles.camFallbackText}>
+            {hasCamPermission
+              ? 'No camera available on this device.'
+              : 'Camera permission is required.'}
+          </Text>
+          <TouchableOpacity style={styles.camClose} onPress={() => setCameraFor(null)}>
+            <Text style={styles.camCloseText}>Close</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+    return (
+      <View style={{ flex: 1, backgroundColor: '#000' }}>
+        <Camera
+          ref={camRef}
+          style={StyleSheet.absoluteFill}
+          device={camDevice}
+          isActive
+          photo
+        />
+        <View style={styles.camBar}>
+          <TouchableOpacity onPress={() => setCameraFor(null)} style={styles.camSideBtn}>
+            <Text style={styles.camSideText}>Cancel</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={takePhoto} style={styles.shutter} activeOpacity={0.8}>
+            <Image source={CAMERA_ICON} style={styles.shutterIcon} resizeMode="contain" />
+            <Text style={styles.shutterText}>Capture</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => setIsFrontCamera(p => !p)}
+            style={styles.camSideBtn}
+          >
+            <Text style={styles.camSideText}>Flip</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
 
   return (
     // Same soft Amul red-tint-to-white wash as the Home (Dashboard) screen, so
@@ -1332,7 +2156,10 @@ const DilEntryScreen = () => {
             {dilPlant ? (
               <TouchableOpacity
                 style={styles.plantClearBtn}
-                onPress={() => setDilPlant(null)}
+                onPress={() => {
+                  setDilPlant(null);
+                  setDockNo(''); // plant changed -> drop any chosen dock
+                }}
                 activeOpacity={0.7}
                 accessibilityRole="button"
                 accessibilityLabel="Clear selected plant"
@@ -1379,6 +2206,7 @@ const DilEntryScreen = () => {
             disabled={locked}
           >
             <Text style={styles.dateBtnText}>{toDisplay(dilDate)}</Text>
+            <CalendarIcon />
           </TouchableOpacity>
 
           {/* ---- Get DIL Details + Reset ------------------------------- */}
@@ -1411,6 +2239,17 @@ const DilEntryScreen = () => {
           {/* ---- Entry module — ONLY when the RFC returned products ------ */}
           {showEntry && products.length > 0 ? (
             <View style={styles.entrySection}>
+              {/* Background reconcile indicator — the form is already usable; a
+                  saved draft's products may still be re-synced with SAP. */}
+              {syncingSaved ? (
+                <View style={styles.syncBanner}>
+                  <ActivityIndicator size="small" color={COLORS.primaryRed} />
+                  <Text style={styles.syncBannerText}>
+                    Syncing saved entries with SAP…
+                  </Text>
+                </View>
+              ) : null}
+
               {/* DIL header — document-level fields from the first RFC row. */}
               {head ? (
                 <View style={styles.headerBox}>
@@ -1450,11 +2289,92 @@ const DilEntryScreen = () => {
               ) : null}
 
               {/* Driver & Vehicle details — captured first, before products. */}
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionHeaderText}>
-                  Driver &amp; Vehicle Details
+              <CollapsibleHeader
+                title="Driver & Vehicle Details"
+                open={!collapsed.driver}
+                onPress={() => toggleSection('driver')}
+              />
+              {collapsed.driver ? null : (
+                <>
+
+              {/* Vehicle Number FIRST — captured before driver/mobile, with a
+                  type-ahead of today's vehicles for the selected plant. Picking
+                  one fills the vehicle AND the driver name. Typing freely is
+                  always allowed; the list is only a shortcut. */}
+              <Label required>Vehicle Number</Label>
+              <TextInput
+                style={[styles.input, vehicleInvalid && styles.inputError]}
+                value={vehicleNo}
+                onChangeText={text => {
+                  setVehicleNo(text.toUpperCase().replace(/[^A-Z0-9]/g, ''));
+                  setVehicleSuggestOpen(true);
+                }}
+                onFocus={() => setVehicleSuggestOpen(true)}
+                // Close the suggestions when the field loses focus (typed and
+                // cleared, or tapped away). The short delay lets a tap ON a
+                // suggestion register first — its onPress also closes the list.
+                onBlur={() =>
+                  setTimeout(() => setVehicleSuggestOpen(false), 150)
+                }
+                placeholder="e.g. GJ01AB1234"
+                placeholderTextColor="#9AA0AA"
+                maxLength={15}
+                autoCapitalize="characters"
+                autoCorrect={false}
+                returnKeyType="next"
+              />
+              {vehicleSuggestOpen && vehicleSuggestFiltered.length > 0 ? (
+                <View style={styles.suggestBox}>
+                  <ScrollView
+                    style={styles.suggestList}
+                    keyboardShouldPersistTaps="handled"
+                    nestedScrollEnabled
+                  >
+                    {vehicleSuggestFiltered.map((v, i) => (
+                      <TouchableOpacity
+                        key={String(v.vehicle_no || '') + '|' + i}
+                        style={[
+                          styles.suggestRow,
+                          i === vehicleSuggestFiltered.length - 1 &&
+                            styles.suggestRowLast,
+                        ]}
+                        activeOpacity={0.7}
+                        onPress={() => {
+                          setVehicleNo(
+                            String(v.vehicle_no || '')
+                              .toUpperCase()
+                              .replace(/[^A-Z0-9]/g, '')
+                              .slice(0, 15),
+                          );
+                          if (v.driver_nm) {
+                            setDriverName(
+                              String(v.driver_nm)
+                                .toUpperCase()
+                                .replace(/[^A-Z .]/g, '')
+                                .slice(0, 60),
+                            );
+                          }
+                          setVehicleSuggestOpen(false);
+                        }}
+                      >
+                        <Text style={styles.suggestVeh}>
+                          {String(v.vehicle_no || '')}
+                        </Text>
+                        {v.driver_nm ? (
+                          <Text style={styles.suggestSub} numberOfLines={1}>
+                            {String(v.driver_nm || '')}
+                          </Text>
+                        ) : null}
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+              ) : null}
+              {vehicleInvalid ? (
+                <Text style={styles.fieldError}>
+                  Enter a valid vehicle number, e.g. GJ01AB1234.
                 </Text>
-              </View>
+              ) : null}
 
               <Label required>Driver Name</Label>
               <TextInput
@@ -1463,6 +2383,7 @@ const DilEntryScreen = () => {
                 onChangeText={text =>
                   setDriverName(text.toUpperCase().replace(/[^A-Z .]/g, ''))
                 }
+                onFocus={() => setVehicleSuggestOpen(false)}
                 placeholder="ENTER DRIVER NAME"
                 placeholderTextColor="#9AA0AA"
                 maxLength={60}
@@ -1478,11 +2399,12 @@ const DilEntryScreen = () => {
                 onChangeText={text =>
                   setMobileNo(text.replace(/[^0-9]/g, '').slice(0, 10))
                 }
+                onFocus={() => setVehicleSuggestOpen(false)}
                 placeholder="10-digit mobile number"
                 placeholderTextColor="#9AA0AA"
                 keyboardType="number-pad"
                 maxLength={10}
-                returnKeyType="next"
+                returnKeyType="done"
               />
               {mobileInvalid ? (
                 <Text style={styles.fieldError}>
@@ -1490,32 +2412,189 @@ const DilEntryScreen = () => {
                 </Text>
               ) : null}
 
-              <Label required>Vehicle Number</Label>
+              <Label required>LR Number</Label>
               <TextInput
-                style={[styles.input, vehicleInvalid && styles.inputError]}
-                value={vehicleNo}
+                style={styles.input}
+                value={lrNumber}
                 onChangeText={text =>
-                  setVehicleNo(text.toUpperCase().replace(/[^A-Z0-9]/g, ''))
+                  setLrNumber(text.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 20))
                 }
-                placeholder="e.g. GJ01AB1234"
+                onFocus={() => setVehicleSuggestOpen(false)}
+                placeholder="ENTER LR NUMBER"
                 placeholderTextColor="#9AA0AA"
-                maxLength={15}
+                maxLength={20}
                 autoCapitalize="characters"
                 autoCorrect={false}
                 returnKeyType="done"
               />
-              {vehicleInvalid ? (
-                <Text style={styles.fieldError}>
-                  Enter a valid vehicle number, e.g. GJ01AB1234.
-                </Text>
-              ) : null}
 
-              <View style={styles.divider} />
+              {/* ---- Dock Selection (mandatory on Submit) ---------------
+                  Same behaviour as the Plant dropdown: a searchable picker +
+                  an inline clear. Docks are listed for the plant chosen in the
+                  top dropdown. */}
+              <Label required>Dock Selection</Label>
+              <View style={styles.dropdownRow}>
+                <TouchableOpacity
+                  style={[styles.dropdown, styles.dropdownFlex]}
+                  onPress={() => {
+                    if (dilPlant && dilPlant.plant_code) {
+                      setVehicleSuggestOpen(false);
+                      setDockQuery('');
+                      setDockPickerOpen(true);
+                    } else {
+                      Alert.alert('Select a plant', 'Choose a plant first to list its docks.');
+                    }
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Text
+                    style={dockNo ? styles.dropdownSelected : styles.dropdownPlaceholder}
+                    numberOfLines={1}
+                  >
+                    {!dilPlant || !dilPlant.plant_code
+                      ? 'Select a plant first'
+                      : dockNo
+                      ? (() => {
+                          const d = docks.find(
+                            x => String(x.dock_no) === String(dockNo),
+                          );
+                          return d && d.dock_name
+                            ? String(d.dock_name)
+                            : 'Dock ' + dockNo;
+                        })()
+                      : docksLoading
+                      ? 'Loading docks…'
+                      : docks.length
+                      ? 'Select dock'
+                      : 'No docks for this plant'}
+                  </Text>
+                  <View style={styles.caret} />
+                </TouchableOpacity>
+
+                {/* Inline clear (✕) — shown only when a dock is selected. */}
+                {dockNo ? (
+                  <TouchableOpacity
+                    style={styles.plantClearBtn}
+                    onPress={() => setDockNo('')}
+                    activeOpacity={0.7}
+                    accessibilityRole="button"
+                    accessibilityLabel="Clear selected dock"
+                  >
+                    <Text style={styles.plantClearIcon}>✕</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+
+                </>
+              )}
+
+              {/* ---- Loading Photos & Time ------------------------------
+                  Three mandatory photos + the loading start/end times
+                  (auto-stamped on tap, editable). Placed right after Dock. */}
+              <CollapsibleHeader
+                title="Loading Photos & Time"
+                open={!collapsed.photos}
+                onPress={() => toggleSection('photos')}
+              />
+              {collapsed.photos ? null : (
+                <>
+
+              {LOAD_PHOTOS.map(ph => (
+                <PhotoTile
+                  key={ph.key}
+                  label={ph.label}
+                  required
+                  image={loadPhotos[ph.key]}
+                  uploaded={!!existingPhotos[ph.key]}
+                  onView={() => openPhotoViewer(ph.key, ph.label)}
+                  onPress={() => {
+                    if (hasCamPermission) {
+                      setCameraFor(ph.key);
+                    } else {
+                      Camera.requestCameraPermission()
+                        .then(s => {
+                          const ok = s === 'granted' || s === 'authorized';
+                          setHasCamPermission(ok);
+                          if (ok) setCameraFor(ph.key);
+                          else
+                            Alert.alert(
+                              'Camera permission',
+                              'Please allow camera access to capture the photo.',
+                            );
+                        })
+                        .catch(() => {});
+                    }
+                  }}
+                />
+              ))}
+
+              <Label>Loading Start Date-Time</Label>
+              <View style={styles.dropdownRow}>
+                <TouchableOpacity
+                  style={[styles.dropdown, styles.dropdownFlex]}
+                  onPress={() => openDtPicker('start', loadStartTime)}
+                  activeOpacity={0.8}
+                >
+                  <Text
+                    style={loadStartTime ? styles.dropdownSelected : styles.dropdownPlaceholder}
+                    numberOfLines={1}
+                  >
+                    {loadStartTime || 'DD-MM-YYYY HH:MM'}
+                  </Text>
+                  <CalendarIcon />
+                </TouchableOpacity>
+                {loadStartTime ? (
+                  <TouchableOpacity
+                    style={styles.plantClearBtn}
+                    onPress={() => setLoadStartTime('')}
+                    activeOpacity={0.7}
+                    accessibilityRole="button"
+                    accessibilityLabel="Clear loading start date-time"
+                  >
+                    <Text style={styles.plantClearIcon}>✕</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+
+              <Label>Loading End Date-Time</Label>
+              <View style={styles.dropdownRow}>
+                <TouchableOpacity
+                  style={[styles.dropdown, styles.dropdownFlex]}
+                  onPress={() => openDtPicker('end', loadEndTime)}
+                  activeOpacity={0.8}
+                >
+                  <Text
+                    style={loadEndTime ? styles.dropdownSelected : styles.dropdownPlaceholder}
+                    numberOfLines={1}
+                  >
+                    {loadEndTime || 'DD-MM-YYYY HH:MM'}
+                  </Text>
+                  <CalendarIcon />
+                </TouchableOpacity>
+                {loadEndTime ? (
+                  <TouchableOpacity
+                    style={styles.plantClearBtn}
+                    onPress={() => setLoadEndTime('')}
+                    activeOpacity={0.7}
+                    accessibilityRole="button"
+                    accessibilityLabel="Clear loading end date-time"
+                  >
+                    <Text style={styles.plantClearIcon}>✕</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+
+                </>
+              )}
 
               {/* ---- Live Stock table for ALL DIL products --------------- */}
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionHeaderText}>Live Stock</Text>
-              </View>
+              <CollapsibleHeader
+                title="Live Stock"
+                open={!collapsed.stock}
+                onPress={() => toggleSection('stock')}
+              />
+              {collapsed.stock ? null : (
+                <>
               <View style={styles.lsTable}>
                 <View style={[styles.lsRow, styles.lsHeadRow]}>
                   <Text style={[styles.lsCellName, styles.lsHeadText]}>Product</Text>
@@ -1523,55 +2602,90 @@ const DilEntryScreen = () => {
                   <Text style={[styles.lsCellNum, styles.lsHeadText]}>Resv</Text>
                   <Text style={[styles.lsCellNum, styles.lsHeadText]}>Avail</Text>
                 </View>
-                {products.map((p, i) => {
-                  const s = stockByMat[String(p.MATNR || '').toUpperCase()];
-                  // A product is SHORT when its live available stock can't cover
-                  // the quantity this DIL requires (MENGE). Only judged once stock
-                  // has loaded (s present) and a required qty is known.
-                  const required = parseFloat(p.MENGE) || 0;
-                  const availNum = s ? parseFloat(s.available) || 0 : null;
-                  const short =
-                    availNum !== null &&
-                    required > 0 &&
-                    availNum + 0.0001 < required;
-                  return (
-                    <View
-                      style={[
-                        styles.lsRow,
-                        short && styles.lsRowShort,
-                        i === products.length - 1 && styles.lsRowLast,
-                      ]}
-                      key={p.EBELP || i}
-                    >
-                      <View style={styles.lsCellName}>
-                        <Text style={styles.lsName} numberOfLines={2}>
-                          {String(p.TXZ01 || p.MATNR || '')}
-                        </Text>
-                        <Text style={styles.lsCode}>{String(p.MATNR || '')}</Text>
-                        {short ? (
-                          <Text style={styles.lsShortTag}>
-                            Short by {fmtQty(required - availNum)}
-                            {p.MEINS ? ' ' + p.MEINS : ''}
-                          </Text>
-                        ) : null}
-                      </View>
-                      <Text style={styles.lsCellNum}>
-                        {s ? fmtQty(s.total) : '…'}
-                      </Text>
-                      <Text style={[styles.lsCellNum, styles.lsResv]}>
-                        {s ? fmtQty(s.reserved) : '…'}
-                      </Text>
-                      <Text
+                {(() => {
+                  // Live Stock is a MATERIAL-level summary: stock (total / reserved
+                  // / available) is held per material, not per DIL line. A DIL can
+                  // carry the same material on more than one line, so collapse the
+                  // product lines to ONE row per material here — otherwise the same
+                  // stock shows twice and the reserved figure looks doubled. The
+                  // required quantity is SUMMED across all lines of the material, so
+                  // the shortage check reflects the DIL's total need for it.
+                  var byMat = [];
+                  var idxByMat = {};
+                  products.forEach(function (p) {
+                    var code = String(p.MATNR || '').toUpperCase();
+                    if (idxByMat[code] === undefined) {
+                      idxByMat[code] = byMat.length;
+                      byMat.push({
+                        MATNR: p.MATNR,
+                        TXZ01: p.TXZ01,
+                        MEINS: p.MEINS,
+                        required: parseFloat(p.MENGE) || 0,
+                      });
+                    } else {
+                      byMat[idxByMat[code]].required += parseFloat(p.MENGE) || 0;
+                    }
+                  });
+                  return byMat.map(function (p, i) {
+                    var s = stockByMat[String(p.MATNR || '').toUpperCase()];
+                    // SHORT when the stock FREE FOR THIS DIL can't cover the
+                    // material's TOTAL required qty across all its lines. We use
+                    // avail_for_dil (total − reserved by OTHER DILs) so this
+                    // DIL's own reservation is never counted against its own
+                    // need — otherwise reopening a saved DIL falsely shows short.
+                    // Falls back to "available" for older backends. Judged only
+                    // once stock has loaded (s present) and a required qty known.
+                    var required = p.required;
+                    var shortBase =
+                      s && s.avail_for_dil !== undefined && s.avail_for_dil !== null
+                        ? s.avail_for_dil
+                        : s
+                        ? s.available
+                        : null;
+                    var availNum = shortBase !== null ? parseFloat(shortBase) || 0 : null;
+                    var short =
+                      availNum !== null &&
+                      required > 0 &&
+                      availNum + 0.0001 < required;
+                    return (
+                      <View
                         style={[
-                          styles.lsCellNum,
-                          short ? styles.lsAvailShort : styles.lsAvail,
+                          styles.lsRow,
+                          short && styles.lsRowShort,
+                          i === byMat.length - 1 && styles.lsRowLast,
                         ]}
+                        key={String(p.MATNR || '') + '|' + i}
                       >
-                        {s ? fmtQty(s.available) : '…'}
-                      </Text>
-                    </View>
-                  );
-                })}
+                        <View style={styles.lsCellName}>
+                          <Text style={styles.lsName} numberOfLines={2}>
+                            {String(p.TXZ01 || p.MATNR || '')}
+                          </Text>
+                          <Text style={styles.lsCode}>{String(p.MATNR || '')}</Text>
+                          {short ? (
+                            <Text style={styles.lsShortTag}>
+                              Short by {fmtQty(required - availNum)}
+                              {p.MEINS ? ' ' + p.MEINS : ''}
+                            </Text>
+                          ) : null}
+                        </View>
+                        <Text style={styles.lsCellNum}>
+                          {s ? fmtQty(s.total) : '…'}
+                        </Text>
+                        <Text style={[styles.lsCellNum, styles.lsResv]}>
+                          {s ? fmtQty(s.reserved) : '…'}
+                        </Text>
+                        <Text
+                          style={[
+                            styles.lsCellNum,
+                            short ? styles.lsAvailShort : styles.lsAvail,
+                          ]}
+                        >
+                          {s ? fmtQty(s.available) : '…'}
+                        </Text>
+                      </View>
+                    );
+                  });
+                })()}
               </View>
               <View style={styles.lsRefreshRow}>
                 <Text style={styles.lsUpdatedText}>
@@ -1596,10 +2710,17 @@ const DilEntryScreen = () => {
                 </TouchableOpacity>
               </View>
 
+                </>
+              )}
+
               {/* Products loaded from the RFC into a dropdown. */}
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionHeaderText}>Product Details</Text>
-              </View>
+              <CollapsibleHeader
+                title="Product Details"
+                open={!collapsed.product}
+                onPress={() => toggleSection('product')}
+              />
+              {collapsed.product ? null : (
+                <>
 
               <Label required>Product</Label>
               <View style={styles.dropdownRow}>
@@ -1788,12 +2909,22 @@ const DilEntryScreen = () => {
 
                           {!b.saved ? (
                             <TouchableOpacity
-                              style={styles.batchSaveBtn}
+                              style={[
+                                styles.batchSaveBtn,
+                                savingBatchIdx !== null &&
+                                  styles.batchSaveBtnDisabled,
+                              ]}
                               onPress={() => saveBatchRow(idx)}
+                              // Disable every save button while any save is in
+                              // flight, so a slow response can't be double-tapped
+                              // into duplicate batches.
+                              disabled={savingBatchIdx !== null}
                               activeOpacity={0.85}
                               accessibilityLabel="Save batch"
                             >
-                              <Text style={styles.batchSaveText}>+</Text>
+                              <Text style={styles.batchSaveText}>
+                                {savingBatchIdx === idx ? '…' : '+'}
+                              </Text>
                             </TouchableOpacity>
                           ) : (
                             <View style={styles.batchSavedChip}>
@@ -1998,13 +3129,17 @@ const DilEntryScreen = () => {
                 </View>
               ) : null}
 
+                </>
+              )}
+
               {/* ---- Pallet Detail (optional) --------------------------- */}
-              <View style={styles.divider} />
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionHeaderText}>
-                  Pallet Detail (If Used)
-                </Text>
-              </View>
+              <CollapsibleHeader
+                title="Pallet Detail (If Used)"
+                open={!collapsed.pallet}
+                onPress={() => toggleSection('pallet')}
+              />
+              {collapsed.pallet ? null : (
+                <>
 
               <View style={styles.palletRow}>
                 <View style={styles.palletCol}>
@@ -2058,6 +3193,100 @@ const DilEntryScreen = () => {
                 </View>
               ) : null}
 
+                </>
+              )}
+
+              {/* ---- Seal + Vehicle Temperature (optional) -------------- */}
+              <CollapsibleHeader
+                title="Seal (If Used) & Vehicle Temperature Details"
+                open={!collapsed.seal}
+                onPress={() => toggleSection('seal')}
+              />
+              {collapsed.seal ? null : (
+                <>
+
+              <Label>Seal Number 1</Label>
+              <TextInput
+                style={styles.input}
+                value={sealNo}
+                onChangeText={text =>
+                  setSealNo(text.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 30))
+                }
+                placeholder="ENTER SEAL NUMBER 1"
+                placeholderTextColor="#9AA0AA"
+                maxLength={30}
+                autoCapitalize="characters"
+                autoCorrect={false}
+                returnKeyType="done"
+              />
+
+              {/* Second seal — used only when two seals are applied. Optional. */}
+              <Label>Seal Number 2</Label>
+              <TextInput
+                style={styles.input}
+                value={sealNo2}
+                onChangeText={text =>
+                  setSealNo2(text.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 30))
+                }
+                placeholder="ENTER SEAL NUMBER 2 (IF USED)"
+                placeholderTextColor="#9AA0AA"
+                maxLength={30}
+                autoCapitalize="characters"
+                autoCorrect={false}
+                returnKeyType="done"
+              />
+
+              {/* Vehicle temperature — numeric, may be negative (e.g. frozen
+                  loads). Optional. One leading '-' and one decimal point only. */}
+              <Label>
+                Vehicle Temperature{' '}
+                <Text style={styles.labelUnit}>(+/-)</Text>
+              </Label>
+              <TextInput
+                style={styles.input}
+                value={vehicleTemp}
+                onChangeText={t => {
+                  let s = t.replace(/[^0-9.\-]/g, ''); // digits, dot, minus only
+                  s = s.replace(/(?!^)-/g, ''); // keep '-' only at the very start
+                  s = s.replace(/(\..*)\./g, '$1'); // at most one decimal point
+                  setVehicleTemp(s.slice(0, 8));
+                }}
+                placeholder="e.g. -18.5"
+                placeholderTextColor="#9AA0AA"
+                keyboardType="numbers-and-punctuation"
+                maxLength={8}
+                autoCorrect={false}
+                returnKeyType="done"
+              />
+
+                </>
+              )}
+
+              {/* ---- Total Load Qty (read-only) --------------------------
+                  Sum of every product's SAVED batch quantity — i.e. the qty
+                  actually loaded. Computed, never typed. Unit shown only when
+                  all products share one UoM. */}
+              <View style={styles.divider} />
+              <Label>Total Load Qty</Label>
+              <View style={styles.readonlyBox}>
+                <Text style={styles.readonlyText}>
+                  {(() => {
+                    let total = 0;
+                    products.forEach(p => {
+                      const rows =
+                        batchesByEbelp[p.EBELP] ||
+                        batchesByEbelp[String(p.EBELP)] ||
+                        [];
+                      total += rows.reduce(
+                        (s, b) => s + (b.saved ? parseFloat(b.qty) || 0 : 0),
+                        0,
+                      );
+                    });
+                    return fmtQty(total);
+                  })()}
+                </Text>
+              </View>
+
               {/* ---- Save / Submit -------------------------------------- */}
               <View style={styles.saveRow}>
                 <TouchableOpacity
@@ -2105,6 +3334,56 @@ const DilEntryScreen = () => {
         onClose={() => setDatePickerOpen(false)}
       />
 
+      {/* Loading date-time — iOS inline native picker (Android uses the system
+          date/time dialogs directly, no modal). */}
+      {Platform.OS === 'ios' ? (
+        <Modal
+          visible={dtPickerFor !== null}
+          transparent
+          statusBarTranslucent
+          animationType="fade"
+          onRequestClose={() => setDtPickerFor(null)}
+        >
+          <Pressable style={styles.pickerBackdrop} onPress={() => setDtPickerFor(null)}>
+            <Pressable style={styles.pickerPanel} onPress={() => {}}>
+              <Text style={styles.pickerTitle}>
+                {dtPickerFor === 'end'
+                  ? 'Loading End Date-Time'
+                  : 'Loading Start Date-Time'}
+              </Text>
+              <DateTimePicker
+                value={dtDraft}
+                mode="datetime"
+                display="spinner"
+                is24Hour
+                accentColor={COLORS.primaryRed}
+                themeVariant="light"
+                onChange={(e, d) => {
+                  if (d) setDtDraft(d);
+                }}
+                style={{ alignSelf: 'stretch' }}
+              />
+              <View style={styles.dtBtnRow}>
+                <TouchableOpacity
+                  style={[styles.dtBtn, styles.dtBtnBack]}
+                  onPress={() => setDtPickerFor(null)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.dtBtnBackText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.dtBtn, styles.dtBtnOk]}
+                  onPress={commitDt}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.dtBtnOkText}>Done</Text>
+                </TouchableOpacity>
+              </View>
+            </Pressable>
+          </Pressable>
+        </Modal>
+      ) : null}
+
       {/* Product picker — centered modal list of the RFC products. */}
       <Modal
         visible={productPickerOpen}
@@ -2138,6 +3417,16 @@ const DilEntryScreen = () => {
                     <Text style={styles.optionCode}>{String(p.MATNR || '')}</Text>
                     <Text style={styles.optionName} numberOfLines={2}>
                       {String(p.TXZ01 || '—')}
+                    </Text>
+                    {/* Line item + planned qty — tells two lines of the SAME
+                        material apart so they aren't mistaken for duplicates. */}
+                    <Text style={styles.optionSub}>
+                      Line {String(p.EBELP != null ? p.EBELP : '—')}
+                      {p.MENGE
+                        ? '  ·  Qty ' +
+                          fmtQty(p.MENGE) +
+                          (p.MEINS ? ' ' + String(p.MEINS) : '')
+                        : ''}
                     </Text>
                   </TouchableOpacity>
                 );
@@ -2226,7 +3515,11 @@ const DilEntryScreen = () => {
                       key={(pl.plant_code || '') + i}
                       style={[styles.optionRow, active && styles.optionRowActive]}
                       onPress={() => {
+                        const changed =
+                          !dilPlant ||
+                          String(dilPlant.plant_code) !== String(pl.plant_code);
                         setDilPlant(pl);
+                        if (changed) setDockNo(''); // new plant -> drop chosen dock
                         setPlantPickerOpen(false);
                       }}
                       activeOpacity={0.7}
@@ -2248,10 +3541,105 @@ const DilEntryScreen = () => {
                   onPress={() => {
                     setPlantPickerOpen(false);
                     setDilPlant(null);
+                    setDockNo(''); // plant cleared -> drop any chosen dock
                   }}
                   activeOpacity={0.7}
                   accessibilityRole="button"
                   accessibilityLabel="Clear plant selection"
+                >
+                  <Text style={styles.optionClearIcon}>✕</Text>
+                  <Text style={styles.optionClearText}>Clear Selection</Text>
+                </TouchableOpacity>
+              ) : null}
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* Dock picker — active docks for the selected plant (get_dil_dock_list). */}
+      <Modal
+        visible={dockPickerOpen}
+        transparent
+        statusBarTranslucent
+        animationType="fade"
+        onRequestClose={() => setDockPickerOpen(false)}
+      >
+        <Pressable
+          style={styles.pickerBackdrop}
+          onPress={() => setDockPickerOpen(false)}
+        >
+          <Pressable style={styles.pickerPanel} onPress={() => {}}>
+            <Text style={styles.pickerTitle}>Select Dock</Text>
+            {/* Search box — filters by dock name or number as you type. */}
+            <TextInput
+              style={styles.pickerSearch}
+              value={dockQuery}
+              onChangeText={setDockQuery}
+              placeholder="Search dock name or number…"
+              placeholderTextColor="#9AA0AA"
+              autoCorrect={false}
+              returnKeyType="search"
+            />
+            <ScrollView
+              style={styles.pickerList}
+              keyboardShouldPersistTaps="handled"
+            >
+              {(() => {
+                if (docksLoading) {
+                  return <Text style={styles.pickerEmpty}>Loading docks…</Text>;
+                }
+                if (docks.length === 0) {
+                  return (
+                    <Text style={styles.pickerEmpty}>
+                      No docks found for this plant.
+                    </Text>
+                  );
+                }
+                const q = dockQuery.trim().toLowerCase();
+                const filtered = q
+                  ? docks.filter(dk =>
+                      `${dk.dock_no || ''} ${dk.dock_name || ''}`
+                        .toLowerCase()
+                        .includes(q),
+                    )
+                  : docks;
+                if (filtered.length === 0) {
+                  return (
+                    <Text style={styles.pickerEmpty}>
+                      No dock matches “{dockQuery.trim()}”.
+                    </Text>
+                  );
+                }
+                return filtered.map((dk, i) => {
+                  const active = String(dockNo) === String(dk.dock_no);
+                  return (
+                    <TouchableOpacity
+                      key={String(dk.dock_no || '') + '|' + i}
+                      style={[styles.optionRow, active && styles.optionRowActive]}
+                      onPress={() => {
+                        setDockNo(String(dk.dock_no || ''));
+                        setDockPickerOpen(false);
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.optionName} numberOfLines={2}>
+                        {String(dk.dock_name || dk.dock_no || '—')}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                });
+              })()}
+
+              {dockNo ? (
+                <TouchableOpacity
+                  style={styles.optionClear}
+                  onPress={() => {
+                    setDockPickerOpen(false);
+                    setDockNo('');
+                  }}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel="Clear dock selection"
                 >
                   <Text style={styles.optionClearIcon}>✕</Text>
                   <Text style={styles.optionClearText}>Clear Selection</Text>
@@ -2360,6 +3748,137 @@ const DilEntryScreen = () => {
         </ScannerBoundary>
       ) : null}
 
+      {/* Short-submit reason — opens when Submit is tapped with any product
+          below its planned quantity. A reason is mandatory; "Other" needs a
+          note. The chosen reason is stored on the DIL (vc_short_remark). */}
+      <Modal
+        visible={shortModalOpen}
+        transparent
+        statusBarTranslucent
+        animationType="fade"
+        onRequestClose={() => setShortModalOpen(false)}
+      >
+        <Pressable
+          style={styles.pickerBackdrop}
+          onPress={() => setShortModalOpen(false)}
+        >
+          <Pressable style={styles.pickerPanel} onPress={() => {}}>
+            <Text style={styles.pickerTitle}>Submit with less quantity?</Text>
+            <ScrollView
+              style={styles.pickerList}
+              keyboardShouldPersistTaps="handled"
+            >
+              <Text style={styles.shortIntro}>
+                These products are not fully batched:
+              </Text>
+              <Text style={styles.shortList}>{shortLinesText}</Text>
+              <Text style={styles.shortReasonLabel}>
+                Reason <Text style={styles.requiredMark}>*</Text>
+              </Text>
+              {SHORT_REASONS.map(r => {
+                const active = shortReason === r;
+                return (
+                  <TouchableOpacity
+                    key={r}
+                    style={[styles.reasonRow, active && styles.reasonRowActive]}
+                    onPress={() => setShortReason(r)}
+                    activeOpacity={0.7}
+                  >
+                    <View
+                      style={[
+                        styles.reasonRadio,
+                        active && styles.reasonRadioActive,
+                      ]}
+                    >
+                      {active ? <View style={styles.reasonRadioDot} /> : null}
+                    </View>
+                    <Text style={styles.reasonText}>{r}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+              <Text style={styles.shortReasonLabel}>
+                Note{' '}
+                {shortReason === 'Other' ? (
+                  <Text style={styles.requiredMark}>*</Text>
+                ) : (
+                  <Text style={styles.labelUnit}>(optional)</Text>
+                )}
+              </Text>
+              <TextInput
+                style={styles.shortNote}
+                value={shortNote}
+                onChangeText={setShortNote}
+                placeholder={
+                  shortReason === 'Other'
+                    ? 'Describe the reason…'
+                    : 'Add any detail (optional)…'
+                }
+                placeholderTextColor="#9AA0AA"
+                multiline
+                maxLength={255}
+              />
+            </ScrollView>
+            <View style={styles.shortBtnRow}>
+              <TouchableOpacity
+                style={[styles.shortBtn, styles.shortBtnCancel]}
+                onPress={() => setShortModalOpen(false)}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.shortBtnCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.shortBtn, styles.shortBtnConfirm]}
+                onPress={confirmShortSubmit}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.shortBtnConfirmText}>Submit anyway</Text>
+              </TouchableOpacity>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* Full-screen photo viewer — the tiles' "View" button. */}
+      <Modal
+        visible={photoViewer.open}
+        transparent
+        animationType="fade"
+        onRequestClose={() =>
+          setPhotoViewer({ open: false, uri: null, loading: false, label: '' })
+        }
+      >
+        <View style={styles.photoViewerBackdrop}>
+          <View style={styles.photoViewerBar}>
+            <Text style={styles.photoViewerTitle} numberOfLines={1}>
+              {photoViewer.label}
+            </Text>
+            <TouchableOpacity
+              onPress={() =>
+                setPhotoViewer({ open: false, uri: null, loading: false, label: '' })
+              }
+              style={styles.photoViewerClose}
+              accessibilityRole="button"
+              accessibilityLabel="Close photo"
+            >
+              <Text style={styles.photoViewerCloseText}>✕</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.photoViewerBody}>
+            {photoViewer.loading ? (
+              <ActivityIndicator size="large" color="#FFFFFF" />
+            ) : photoViewer.uri ? (
+              <Image
+                source={{ uri: photoViewer.uri }}
+                style={styles.photoViewerImg}
+                resizeMode="contain"
+              />
+            ) : (
+              <Text style={styles.photoViewerEmpty}>No image to show.</Text>
+            )}
+          </View>
+        </View>
+      </Modal>
+
       {/* Standard branded logo loader while fetching or saving. */}
       {productsLoading ? (
         <BrandLoader title="DIL Entry" caption="Fetching Data" />
@@ -2399,8 +3918,170 @@ const styles = StyleSheet.create({
   // don't wrap to a second line on narrow screens.
   labelUnit: { fontSize: 11, fontWeight: '500', color: COLORS.muted },
 
+  // ---- Dispatch photo tiles ----
+  photoTile: {
+    width: '100%',
+    height: 150,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: COLORS.inputBorder,
+    backgroundColor: '#FAFAFB',
+    overflow: 'hidden',
+    marginBottom: 12,
+  },
+  photoTileEmptyBorder: { borderStyle: 'dashed', borderColor: '#D8B4BA' },
+  photoTileEmpty: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12 },
+  photoTileIcon: { width: 42, height: 42, tintColor: COLORS.primaryRed },
+  photoTileLabel: {
+    marginTop: 10,
+    color: COLORS.mediumText,
+    fontWeight: '700',
+    fontSize: 13,
+    textAlign: 'center',
+  },
+  photoTileUploaded: { color: '#1E9E57', fontWeight: '800', fontSize: 15 },
+  photoTileReplace: { marginTop: 4, color: COLORS.muted, fontSize: 11, fontWeight: '600' },
+  photoTileImg: { width: '100%', height: '100%' },
+  photoTileRetake: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    paddingVertical: 6,
+    alignItems: 'center',
+  },
+  photoTileRetakeText: { color: '#FFFFFF', fontWeight: '700', fontSize: 12, letterSpacing: 0.3 },
+
+  // Filled tile (preview or "Uploaded") with a two-button action bar.
+  photoTileBody: { flex: 1, width: '100%', overflow: 'hidden' },
+  photoTileImgFill: { flex: 1, width: '100%' },
+  photoTileActions: {
+    flexDirection: 'row',
+    height: 40,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.inputBorder,
+    backgroundColor: '#FFFFFF',
+  },
+  photoTileActionBtn: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  photoTileActionDivider: { width: 1, backgroundColor: COLORS.inputBorder },
+  photoTileActionText: { color: COLORS.mediumText, fontWeight: '700', fontSize: 13 },
+  photoTileActionReplace: { color: COLORS.primaryRed },
+
+  // ---- Full-screen photo viewer ----
+  photoViewerBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)' },
+  photoViewerBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingTop: 44,
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+  },
+  photoViewerTitle: { flex: 1, color: '#FFFFFF', fontWeight: '700', fontSize: 15 },
+  photoViewerClose: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.15)',
+  },
+  photoViewerCloseText: { color: '#FFFFFF', fontSize: 18, fontWeight: '700' },
+  photoViewerBody: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 12 },
+  photoViewerImg: { width: '100%', height: '100%' },
+  photoViewerEmpty: { color: '#FFFFFF', fontSize: 14 },
+
+  // ---- Loading time row ----
+  timeRow: { flexDirection: 'row', marginTop: 2 },
+  timeCol: { flex: 1, marginRight: 8 },
+  timeColRight: { flex: 1, marginLeft: 8 },
+  timeInputRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 14 },
+  timeInput: { flex: 1, marginBottom: 0 },
+  timeNowBtn: {
+    marginLeft: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    backgroundColor: COLORS.primaryRed,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  timeNowText: { color: '#FFFFFF', fontWeight: '700', fontSize: 13 },
+
+  // ---- Loading date-time TIME picker ----
+  dtChosenDate: {
+    paddingHorizontal: 18,
+    paddingBottom: 10,
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.primaryRed,
+  },
+  dtTimeRow: { flexDirection: 'row', paddingHorizontal: 12 },
+  dtTimeCol: { flex: 1, paddingHorizontal: 6 },
+  dtTimeColHead: {
+    textAlign: 'center',
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.muted,
+    marginBottom: 6,
+  },
+  dtTimeScroll: { height: 200 },
+  dtTimeItem: { paddingVertical: 11, borderRadius: 10, alignItems: 'center' },
+  dtTimeItemActive: { backgroundColor: COLORS.redTint },
+  dtTimeItemText: { fontSize: 16, color: COLORS.darkText, fontWeight: '600' },
+  dtTimeItemTextActive: { color: COLORS.primaryRed, fontWeight: '800' },
+  dtBtnRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 14,
+    paddingTop: 12,
+    marginTop: 6,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#EDEDED',
+  },
+  dtBtn: { flex: 1, paddingVertical: 13, borderRadius: 12, alignItems: 'center' },
+  dtBtnBack: {
+    borderWidth: 1.5,
+    borderColor: COLORS.inputBorder,
+    marginRight: 8,
+    backgroundColor: '#FFFFFF',
+  },
+  dtBtnBackText: { color: COLORS.darkText, fontSize: 15, fontWeight: '700' },
+  dtBtnOk: { backgroundColor: COLORS.primaryRed, marginLeft: 8 },
+  dtBtnOkText: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
+
+  // ---- Full-screen camera ----
+  camBar: {
+    position: 'absolute',
+    bottom: 36,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    paddingHorizontal: 24,
+  },
+  shutter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.primaryRed,
+    paddingVertical: 14,
+    paddingHorizontal: 28,
+    borderRadius: 50,
+  },
+  shutterIcon: { width: 20, height: 20, tintColor: '#FFFFFF' },
+  shutterText: { color: '#FFFFFF', fontWeight: '800', fontSize: 15, marginLeft: 9 },
+  camSideBtn: { padding: 12 },
+  camSideText: { color: '#FFFFFF', fontWeight: '700', fontSize: 15 },
+  camFallback: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32, backgroundColor: '#000' },
+  camFallbackText: { color: '#FFFFFF', fontSize: 15, textAlign: 'center', marginBottom: 20 },
+  camClose: { backgroundColor: COLORS.primaryRed, borderRadius: 50, paddingVertical: 12, paddingHorizontal: 30 },
+  camCloseText: { color: '#FFFFFF', fontWeight: '700' },
+
   // Tappable date field — same look as the report screens' date buttons.
   dateBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     borderWidth: 1,
     borderColor: COLORS.inputBorder,
     borderRadius: 12,
@@ -2483,6 +4164,33 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
 
+  // Vehicle Number type-ahead suggestion dropdown. Rendered inline, tucked just
+  // under the input (negative margin bridges the input's 16px bottom gap), and
+  // height-capped so a long list scrolls instead of pushing the form down.
+  suggestBox: {
+    marginTop: -12,
+    marginBottom: 16,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: COLORS.inputBorder,
+    borderRadius: 12,
+    overflow: 'hidden',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  suggestList: { maxHeight: 220 },
+  suggestRow: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#EEF0F3',
+  },
+  suggestRowLast: { borderBottomWidth: 0 },
+  suggestVeh: { fontSize: 15, fontWeight: '700', color: COLORS.darkText },
+  suggestSub: { fontSize: 12, color: COLORS.muted, marginTop: 2 },
 
   detailsBox: {
     marginTop: 16,
@@ -2494,6 +4202,26 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   entrySection: { marginTop: 22 },
+
+  // Background-reconcile strip shown at the top of the form while a reopened
+  // draft is being re-synced with SAP.
+  syncBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF6E6',
+    borderWidth: 1,
+    borderColor: '#F3D08A',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 14,
+  },
+  syncBannerText: {
+    marginLeft: 8,
+    color: '#8A5A00',
+    fontSize: 13,
+    fontWeight: '700',
+  },
 
   // Live Stock table (all DIL products).
   lsTable: {
@@ -2589,7 +4317,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 10,
+    marginTop: 4,
+    marginBottom: 16,
     paddingHorizontal: 12,
     paddingVertical: 10,
     backgroundColor: '#FDECEC',
@@ -2639,6 +4368,13 @@ const styles = StyleSheet.create({
     color: COLORS.primaryRed,
     letterSpacing: 0.3,
   },
+  // Collapsible header: same bar, laid out as a row so the chevron sits right.
+  sectionHeaderToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  sectionHeaderTextFlex: { flex: 1, paddingRight: 10 },
 
   // DIL document header — a white card lifted off the pink page with a soft
   // shadow and a red border on all sides, so it reads as a distinct,
@@ -2849,6 +4585,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  batchSaveBtnDisabled: { backgroundColor: '#E7A9B1' },
   batchSaveText: { color: '#FFFFFF', fontSize: 24, fontWeight: '800', lineHeight: 26 },
   batchSavedChip: {
     marginLeft: 8,
@@ -3031,6 +4768,98 @@ const styles = StyleSheet.create({
   optionRowActive: { backgroundColor: COLORS.redTint },
   optionCode: { fontSize: 13, fontWeight: '800', color: COLORS.primaryRed },
   optionName: { fontSize: 14, color: COLORS.darkText, marginTop: 2, lineHeight: 19 },
+  optionSub: { fontSize: 12, color: COLORS.muted, marginTop: 3, fontWeight: '600' },
+
+  // ---- Short-submit reason modal ----
+  shortIntro: {
+    fontSize: 13,
+    color: COLORS.muted,
+    paddingHorizontal: 10,
+    marginBottom: 6,
+    fontWeight: '600',
+  },
+  shortList: {
+    fontSize: 13,
+    color: COLORS.darkText,
+    paddingHorizontal: 10,
+    lineHeight: 20,
+    marginBottom: 14,
+  },
+  shortReasonLabel: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.darkText,
+    paddingHorizontal: 10,
+    marginBottom: 8,
+    marginTop: 4,
+  },
+  reasonRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 11,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+  },
+  reasonRowActive: { backgroundColor: COLORS.redTint },
+  reasonRadio: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: COLORS.inputBorder,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  reasonRadioActive: { borderColor: COLORS.primaryRed },
+  reasonRadioDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: COLORS.primaryRed,
+  },
+  reasonText: { fontSize: 15, color: COLORS.darkText, fontWeight: '600' },
+  shortNote: {
+    marginHorizontal: 10,
+    marginBottom: 6,
+    minHeight: 64,
+    borderWidth: 1,
+    borderColor: COLORS.inputBorder,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    paddingBottom: 10,
+    fontSize: 15,
+    color: COLORS.darkText,
+    textAlignVertical: 'top',
+  },
+  shortBtnRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 14,
+    paddingTop: 12,
+    marginTop: 4,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#EDEDED',
+  },
+  shortBtn: {
+    flex: 1,
+    paddingVertical: 13,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  shortBtnCancel: {
+    borderWidth: 1.5,
+    borderColor: COLORS.inputBorder,
+    marginRight: 8,
+    backgroundColor: '#FFFFFF',
+  },
+  shortBtnCancelText: { color: COLORS.darkText, fontSize: 15, fontWeight: '700' },
+  shortBtnConfirm: {
+    backgroundColor: COLORS.primaryRed,
+    marginLeft: 8,
+  },
+  shortBtnConfirmText: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
 
   // De-select / Clear Selection row at the bottom of the Select Product list.
   optionClear: {

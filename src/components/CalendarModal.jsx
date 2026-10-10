@@ -149,7 +149,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingBottom: 6,
   },
-  picker: { alignSelf: 'stretch' },
+  // iOS inline/graphical picker needs an explicit height or it collapses to
+  // zero and the modal shows an empty gap between the title and the buttons.
+  picker: { alignSelf: 'stretch', height: 350 },
   btnRow: {
     flexDirection: 'row',
     paddingHorizontal: 6,

@@ -4473,7 +4473,10 @@ const styles = StyleSheet.create({
   },
 
   // Batches for a product.
-  batchWrap: { marginTop: 16 },
+  // marginBottom separates the batch section (its "+ Add Batch" button / hint)
+  // from the next section header below it (e.g. "Pallet Detail"), which has no
+  // top margin of its own — without it the two touch/overlap.
+  batchWrap: { marginTop: 16, marginBottom: 18 },
   batchTitleRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -4645,7 +4648,7 @@ const styles = StyleSheet.create({
   addProductText: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
 
   // Added products list.
-  addedWrap: { marginTop: 22 },
+  addedWrap: { marginTop: 22, marginBottom: 18 },
   addedHeading: {
     fontSize: 15,
     fontWeight: '800',

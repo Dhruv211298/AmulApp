@@ -863,20 +863,37 @@ const DilEntryScreen = () => {
   // one the stock is read for (dil_stock_plant). So the "which plant" rule can
   // change server-side with no app release. A legacy plant_code is still sent
   // for older server builds.
-  const fetchBatchStock = useCallback(async (matnr, fromPlant, toPlant, uom) => {
+  const fetchBatchStock = useCallback(async (matnr, fromPlant, toPlant, uom, prod) => {
     setBatchStock([]);
     setMaterialStock(null);
     if (!matnr || (!fromPlant && !toPlant)) return;
     setBatchStockLoading(true);
     try {
       const employeeId = (await getItem(KEYS.userId)) || '';
+      const p = prod || {};
+      const g = k => (p && p[k] != null ? String(p[k]) : '');
+      // FUTURE-PROOF: send the FULL context of the selected product (the whole
+      // product-list row) + DIL + employee, so any future stock/UOM logic can be
+      // handled entirely in the backend with NO app release. Individual fields are
+      // sent for easy backend access; `product_json` carries the complete row for
+      // anything not broken out below.
       const res = await apiPost(ENDPOINTS.dilApi, {
         rtype: '4',
         employee_id: employeeId,
+        dil_no: dilNo.trim(),                       // DIL key -> backend can re-read the RFC/DB for anything
         material_code: matnr,
-        from_plant_code: fromPlant || '',
-        to_plant_code: toPlant || '',
-        plant_code: fromPlant || toPlant || '', // legacy fallback
+        line_item: g('EBELP'),                      // DIL line item (distinguishes duplicate materials)
+        uom: uom || g('MEINS'),                     // product's DIL loading unit (MEINS)
+        from_plant_code: fromPlant || g('RESWK'),   // raw supplying plant
+        to_plant_code: toPlant || g('WERKS'),       // raw destination plant
+        plant_code: fromPlant || toPlant || '',     // legacy fallback
+        planned_qty: g('MENGE'),                    // DIL planned qty for the line
+        net_weight: g('NTGEW'),
+        gross_weight: g('BRGEW'),
+        weight_uom: g('GEWEI'),
+        material_name: g('TXZ01'),
+        mat_group: g('MATKL'),
+        product_json: JSON.stringify(p || {}),      // the whole product-list row, for future use
       });
       const list = res && res.data ? res.data : [];
       setBatchStock(Array.isArray(list) ? list : []);
@@ -895,16 +912,23 @@ const DilEntryScreen = () => {
     } finally {
       setBatchStockLoading(false);
     }
-  }, []);
+  }, [dilNo]);
 
   // Live stock for ALL products in the DIL (rtype 8) — powers the summary table.
   const fetchAllStock = useCallback(
     async prods => {
       const list = prods || products;
       const mats = [];
+      // DIL product UOM (MEINS) aligned 1:1 with mats, so the backend can request
+      // each material's live stock in the DIL's loading unit (e.g. CAR) instead
+      // of the base unit (EA) — the same UOM the per-product batch stock uses.
+      const uoms = [];
       list.forEach(p => {
         const m = String(p.MATNR || '').trim();
-        if (m && !mats.includes(m)) mats.push(m);
+        if (m && !mats.includes(m)) {
+          mats.push(m);
+          uoms.push(String(p.MEINS || '').trim());
+        }
       });
       if (mats.length === 0) {
         setStockByMat({});
@@ -928,6 +952,7 @@ const DilEntryScreen = () => {
           to_plant_code: toPlant,
           plant_code: fromPlant || toPlant, // legacy fallback
           materials: mats.join(','),
+          uoms: uoms.join(','), // DIL product UOM per material (aligned with materials)
         });
         const data = res && res.data ? res.data : [];
         const map = {};
@@ -1168,6 +1193,10 @@ const DilEntryScreen = () => {
                   li: String(p.EBELP),
                   mc: String(p.MATNR || ''),
                   qty: String(p.MENGE || ''),
+                  nw: String(p.NTGEW || ''),  // SAP net weight (authoritative)
+                  gw: String(p.BRGEW || ''),  // SAP gross weight (authoritative)
+                  uom: String(p.MEINS || ''), // SAP qty UoM
+                  wu: String(p.GEWEI || ''),  // SAP weight UoM
                 })),
               ),
             });
@@ -1195,9 +1224,14 @@ const DilEntryScreen = () => {
                   `• ${x.code}: quantity changed ${x.old} → ${x.new}. Saved batches exceeded the new quantity, so they were cleared — please re-enter.`,
                 ),
               );
-              changed.forEach(x =>
-                msg.push(`• ${x.code}: quantity updated ${x.old} → ${x.new}.`),
-              );
+              changed.forEach(x => {
+                if (String(x.old) === String(x.new)) {
+                  // qty unchanged -> it was a weight / UoM update from SAP.
+                  msg.push(`• ${x.code}: details updated from SAP (weight/unit).`);
+                } else {
+                  msg.push(`• ${x.code}: quantity updated ${x.old} → ${x.new}.`);
+                }
+              });
               Alert.alert(
                 'DIL updated in SAP',
                 `Some products changed since you last saved:\n\n${msg.join('\n')}`,
@@ -1447,6 +1481,7 @@ const DilEntryScreen = () => {
         sp.RESWK || plantCode || plantNo || '',
         sp.WERKS || '',
         sp.MEINS || '',
+        sp,
       );
     } else {
       setBatchStock([]);
@@ -1470,6 +1505,7 @@ const DilEntryScreen = () => {
           sp.RESWK || plantCode || plantNo || '',
           sp.WERKS || '',
           sp.MEINS || '',
+          sp,
         );
       }
     }, 20000);
@@ -1587,6 +1623,7 @@ const DilEntryScreen = () => {
           selectedProduct.RESWK || plantCode || plantNo || '',
           selectedProduct.WERKS || '',
           selectedProduct.MEINS || '',
+          selectedProduct,
         );
       }
       fetchAllStock();
@@ -1712,6 +1749,7 @@ const DilEntryScreen = () => {
               sp.RESWK || plantCode || plantNo || '',
               sp.WERKS || '',
               sp.MEINS || '',
+              sp,
             );
           }
           fetchAllStock();
@@ -1722,6 +1760,7 @@ const DilEntryScreen = () => {
             sp.RESWK || plantCode || plantNo || '',
             sp.WERKS || '',
             sp.MEINS || '',
+            sp,
           );
         }
       } catch (e) {
@@ -2660,7 +2699,10 @@ const DilEntryScreen = () => {
                           <Text style={styles.lsName} numberOfLines={2}>
                             {String(p.TXZ01 || p.MATNR || '')}
                           </Text>
-                          <Text style={styles.lsCode}>{String(p.MATNR || '')}</Text>
+                          <Text style={styles.lsCode}>
+                            {String(p.MATNR || '')}
+                            {p.MEINS ? '  ·  UOM: ' + String(p.MEINS) : ''}
+                          </Text>
                           {short ? (
                             <Text style={styles.lsShortTag}>
                               Short by {fmtQty(required - availNum)}

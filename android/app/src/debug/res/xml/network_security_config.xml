@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  DEBUG BUILDS ONLY.
+
+  This file lives in the `debug` source set, so it REPLACES the identically-named
+  config in src/main/res/xml/ for debug builds. Release builds are unaffected and
+  continue to use the strict config in src/main.
+
+  Why it's needed: Metro serves the JS bundle over plain HTTP from the host
+  machine (10.0.2.2:8081 on the emulator, or your LAN IP on a physical device).
+  The main config permits cleartext only for amuldairy.com, so debug builds were
+  blocked from loading the bundle at all — producing "Unable to load script".
+
+  Permitting all cleartext here is safe because it never ships: this source set
+  is excluded from release builds.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

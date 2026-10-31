@@ -1,0 +1,334 @@
+diff --git a/node_modules/@react-native-ml-kit/text-recognition/RNMLKitTextRecognition.podspec b/node_modules/@react-native-ml-kit/text-recognition/RNMLKitTextRecognition.podspec
+index ec38d23..2775302 100644
+--- a/node_modules/@react-native-ml-kit/text-recognition/RNMLKitTextRecognition.podspec
++++ b/node_modules/@react-native-ml-kit/text-recognition/RNMLKitTextRecognition.podspec
+@@ -21,15 +21,18 @@ Pod::Spec.new do |s|
+   s.requires_arc = true
+ 
+   s.dependency "React"
++  # GoogleMLKit 7.0.0 moved GoogleUtilities to ~> 8.0, which is required to
++  # co-exist with @react-native-firebase (Firebase 12.x needs GoogleUtilities
++  # 8.x). 6.0.0 pinned GoogleUtilities < 8.0 and conflicted. Requires iOS 15.5.
+   # To recognize Latin script
+-  s.dependency 'GoogleMLKit/TextRecognition', '6.0.0'
++  s.dependency 'GoogleMLKit/TextRecognition', '7.0.0'
+   # To recognize Chinese script
+-  s.dependency 'GoogleMLKit/TextRecognitionChinese', '6.0.0'
++  s.dependency 'GoogleMLKit/TextRecognitionChinese', '7.0.0'
+   # To recognize Devanagari script
+-  s.dependency 'GoogleMLKit/TextRecognitionDevanagari', '6.0.0'
++  s.dependency 'GoogleMLKit/TextRecognitionDevanagari', '7.0.0'
+   # To recognize Japanese script
+-  s.dependency 'GoogleMLKit/TextRecognitionJapanese', '6.0.0'
++  s.dependency 'GoogleMLKit/TextRecognitionJapanese', '7.0.0'
+   # To recognize Korean script
+-  s.dependency 'GoogleMLKit/TextRecognitionKorean', '6.0.0'
++  s.dependency 'GoogleMLKit/TextRecognitionKorean', '7.0.0'
+ end
+ 
+diff --git a/node_modules/@react-native-ml-kit/text-recognition/android/build.gradle b/node_modules/@react-native-ml-kit/text-recognition/android/build.gradle
+index b5a9949..6a2e36f 100644
+--- a/node_modules/@react-native-ml-kit/text-recognition/android/build.gradle
++++ b/node_modules/@react-native-ml-kit/text-recognition/android/build.gradle
+@@ -62,13 +62,13 @@ dependencies {
+     //noinspection GradleDynamicVersion
+     implementation 'com.facebook.react:react-native:+'  // From node_modules
+     // To recognize Latin script
+-    implementation 'com.google.mlkit:text-recognition:16.0.0'
++    implementation 'com.google.mlkit:text-recognition:16.0.1'
+     // To recognize Chinese script
+-    implementation 'com.google.mlkit:text-recognition-chinese:16.0.0'
++    implementation 'com.google.mlkit:text-recognition-chinese:16.0.1'
+     // To recognize Devanagari script
+-    implementation 'com.google.mlkit:text-recognition-devanagari:16.0.0'
++    implementation 'com.google.mlkit:text-recognition-devanagari:16.0.1'
+     // To recognize Japanese script
+-    implementation 'com.google.mlkit:text-recognition-japanese:16.0.0'
++    implementation 'com.google.mlkit:text-recognition-japanese:16.0.1'
+     // To recognize Korean script
+-    implementation 'com.google.mlkit:text-recognition-korean:16.0.0'
++    implementation 'com.google.mlkit:text-recognition-korean:16.0.1'
+ }
+diff --git a/node_modules/@react-native-ml-kit/text-recognition/android/build/.transforms/35f08616885245ae8c762f75a489b10b/results.bin b/node_modules/@react-native-ml-kit/text-recognition/android/build/.transforms/35f08616885245ae8c762f75a489b10b/results.bin
+new file mode 100644
+index 0000000..7ed749e
+--- /dev/null
++++ b/node_modules/@react-native-ml-kit/text-recognition/android/build/.transforms/35f08616885245ae8c762f75a489b10b/results.bin
+@@ -0,0 +1 @@
++o/bundleLibRuntimeToDirDebug
+diff --git a/node_modules/@react-native-ml-kit/text-recognition/android/build/.transforms/35f08616885245ae8c762f75a489b10b/transformed/bundleLibRuntimeToDirDebug/desugar_graph.bin b/node_modules/@react-native-ml-kit/text-recognition/android/build/.transforms/35f08616885245ae8c762f75a489b10b/transformed/bundleLibRuntimeToDirDebug/desugar_graph.bin
+new file mode 100644
+index 0000000..64a5443
+Binary files /dev/null and b/node_modules/@react-native-ml-kit/text-recognition/android/build/.transforms/35f08616885245ae8c762f75a489b10b/transformed/bundleLibRuntimeToDirDebug/desugar_graph.bin differ
+diff --git a/node_modules/@react-native-ml-kit/text-recognition/android/build/.transforms/73992ac7bb16fe30fa83912aa977881b/results.bin b/node_modules/@react-native-ml-kit/text-recognition/android/build/.transforms/73992ac7bb16fe30fa83912aa977881b/results.bin
+new file mode 100644
+index 0000000..0d259dd
+--- /dev/null
++++ b/node_modules/@react-native-ml-kit/text-recognition/android/build/.transforms/73992ac7bb16fe30fa83912aa977881b/results.bin
+@@ -0,0 +1 @@
++o/classes
+diff --git a/node_modules/@react-native-ml-kit/text-recognition/android/build/.transforms/73992ac7bb16fe30fa83912aa977881b/transformed/classes/classes_dex/classes.dex b/node_modules/@react-native-ml-kit/text-recognition/android/build/.transforms/73992ac7bb16fe30fa83912aa977881b/transformed/classes/classes_dex/classes.dex
+new file mode 100644
+index 0000000..d22015c
+Binary files /dev/null and b/node_modules/@react-native-ml-kit/text-recognition/android/build/.transforms/73992ac7bb16fe30fa83912aa977881b/transformed/classes/classes_dex/classes.dex differ
+diff --git a/node_modules/@react-native-ml-kit/text-recognition/android/build/generated/source/buildConfig/debug/com/rnmlkit/textrecognition/BuildConfig.java b/node_modules/@react-native-ml-kit/text-recognition/android/build/generated/source/buildConfig/debug/com/rnmlkit/textrecognition/BuildConfig.java
+new file mode 100644
+index 0000000..45f6124
+--- /dev/null
++++ b/node_modules/@react-native-ml-kit/text-recognition/android/build/generated/source/buildConfig/debug/com/rnmlkit/textrecognition/BuildConfig.java
+@@ -0,0 +1,10 @@
++/**
++ * Automatically generated file. DO NOT MODIFY
++ */
++package com.rnmlkit.textrecognition;
++
++public final class BuildConfig {
++  public static final boolean DEBUG = Boolean.parseBoolean("true");
++  public static final String LIBRARY_PACKAGE_NAME = "com.rnmlkit.textrecognition";
++  public static final String BUILD_TYPE = "debug";
++}
+diff --git a/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/aapt_friendly_merged_manifests/debug/processDebugManifest/aapt/AndroidManifest.xml b/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/aapt_friendly_merged_manifests/debug/processDebugManifest/aapt/AndroidManifest.xml
+new file mode 100644
+index 0000000..2267fff
+--- /dev/null
++++ b/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/aapt_friendly_merged_manifests/debug/processDebugManifest/aapt/AndroidManifest.xml
+@@ -0,0 +1,8 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- AndroidManifest.xml -->
++<manifest xmlns:android="http://schemas.android.com/apk/res/android"
++    package="com.rnmlkit.textrecognition" >
++
++    <uses-sdk android:minSdkVersion="26" />
++
++</manifest>
+\ No newline at end of file
+diff --git a/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/aapt_friendly_merged_manifests/debug/processDebugManifest/aapt/output-metadata.json b/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/aapt_friendly_merged_manifests/debug/processDebugManifest/aapt/output-metadata.json
+new file mode 100644
+index 0000000..b504d80
+--- /dev/null
++++ b/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/aapt_friendly_merged_manifests/debug/processDebugManifest/aapt/output-metadata.json
+@@ -0,0 +1,18 @@
++{
++  "version": 3,
++  "artifactType": {
++    "type": "AAPT_FRIENDLY_MERGED_MANIFESTS",
++    "kind": "Directory"
++  },
++  "applicationId": "com.rnmlkit.textrecognition",
++  "variantName": "debug",
++  "elements": [
++    {
++      "type": "SINGLE",
++      "filters": [],
++      "attributes": [],
++      "outputFile": "AndroidManifest.xml"
++    }
++  ],
++  "elementType": "File"
++}
+\ No newline at end of file
+diff --git a/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/aar_metadata/debug/writeDebugAarMetadata/aar-metadata.properties b/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/aar_metadata/debug/writeDebugAarMetadata/aar-metadata.properties
+new file mode 100644
+index 0000000..1211b1e
+--- /dev/null
++++ b/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/aar_metadata/debug/writeDebugAarMetadata/aar-metadata.properties
+@@ -0,0 +1,6 @@
++aarFormatVersion=1.0
++aarMetadataVersion=1.0
++minCompileSdk=1
++minCompileSdkExtension=0
++minAndroidGradlePluginVersion=1.0.0
++coreLibraryDesugaringEnabled=false
+diff --git a/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/annotation_processor_list/debug/javaPreCompileDebug/annotationProcessors.json b/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/annotation_processor_list/debug/javaPreCompileDebug/annotationProcessors.json
+new file mode 100644
+index 0000000..9e26dfe
+--- /dev/null
++++ b/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/annotation_processor_list/debug/javaPreCompileDebug/annotationProcessors.json
+@@ -0,0 +1 @@
++{}
+\ No newline at end of file
+diff --git a/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/compile_library_classes_jar/debug/bundleLibCompileToJarDebug/classes.jar b/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/compile_library_classes_jar/debug/bundleLibCompileToJarDebug/classes.jar
+new file mode 100644
+index 0000000..681fad3
+Binary files /dev/null and b/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/compile_library_classes_jar/debug/bundleLibCompileToJarDebug/classes.jar differ
+diff --git a/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/compile_r_class_jar/debug/generateDebugRFile/R.jar b/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/compile_r_class_jar/debug/generateDebugRFile/R.jar
+new file mode 100644
+index 0000000..30c5f9d
+Binary files /dev/null and b/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/compile_r_class_jar/debug/generateDebugRFile/R.jar differ
+diff --git a/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/compile_symbol_list/debug/generateDebugRFile/R.txt b/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/compile_symbol_list/debug/generateDebugRFile/R.txt
+new file mode 100644
+index 0000000..e69de29
+diff --git a/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/incremental/debug/packageDebugResources/compile-file-map.properties b/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/incremental/debug/packageDebugResources/compile-file-map.properties
+new file mode 100644
+index 0000000..b087748
+--- /dev/null
++++ b/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/incremental/debug/packageDebugResources/compile-file-map.properties
+@@ -0,0 +1 @@
++#Sat Oct 31 14:23:16 IST 2026
+diff --git a/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/incremental/debug/packageDebugResources/merger.xml b/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/incremental/debug/packageDebugResources/merger.xml
+new file mode 100644
+index 0000000..067532a
+--- /dev/null
++++ b/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/incremental/debug/packageDebugResources/merger.xml
+@@ -0,0 +1,2 @@
++<?xml version="1.0" encoding="utf-8"?>
++<merger version="3"><dataSet aapt-namespace="http://schemas.android.com/apk/res-auto" config="main$Generated" generated="true" ignore_pattern="!.svn:!.git:!.ds_store:!*.scc:.*:&lt;dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~"><source path="E:\ReactNative\app\AmulApp\node_modules\@react-native-ml-kit\text-recognition\android\src\main\res"/></dataSet><dataSet aapt-namespace="http://schemas.android.com/apk/res-auto" config="main" generated-set="main$Generated" ignore_pattern="!.svn:!.git:!.ds_store:!*.scc:.*:&lt;dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~"><source path="E:\ReactNative\app\AmulApp\node_modules\@react-native-ml-kit\text-recognition\android\src\main\res"/></dataSet><dataSet aapt-namespace="http://schemas.android.com/apk/res-auto" config="debug$Generated" generated="true" ignore_pattern="!.svn:!.git:!.ds_store:!*.scc:.*:&lt;dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~"><source path="E:\ReactNative\app\AmulApp\node_modules\@react-native-ml-kit\text-recognition\android\src\debug\res"/></dataSet><dataSet aapt-namespace="http://schemas.android.com/apk/res-auto" config="debug" generated-set="debug$Generated" ignore_pattern="!.svn:!.git:!.ds_store:!*.scc:.*:&lt;dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~"><source path="E:\ReactNative\app\AmulApp\node_modules\@react-native-ml-kit\text-recognition\android\src\debug\res"/></dataSet><dataSet aapt-namespace="http://schemas.android.com/apk/res-auto" config="generated$Generated" generated="true" ignore_pattern="!.svn:!.git:!.ds_store:!*.scc:.*:&lt;dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~"><source path="E:\ReactNative\app\AmulApp\node_modules\@react-native-ml-kit\text-recognition\android\build\generated\res\resValues\debug"/></dataSet><dataSet aapt-namespace="http://schemas.android.com/apk/res-auto" config="generated" generated-set="generated$Generated" ignore_pattern="!.svn:!.git:!.ds_store:!*.scc:.*:&lt;dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~"><source path="E:\ReactNative\app\AmulApp\node_modules\@react-native-ml-kit\text-recognition\android\build\generated\res\resValues\debug"/></dataSet><mergedItems/></merger>
+\ No newline at end of file
+diff --git a/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/incremental/mergeDebugAssets/merger.xml b/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/incremental/mergeDebugAssets/merger.xml
+new file mode 100644
+index 0000000..0adfeef
+--- /dev/null
++++ b/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/incremental/mergeDebugAssets/merger.xml
+@@ -0,0 +1,2 @@
++<?xml version="1.0" encoding="utf-8"?>
++<merger version="3"><dataSet config="main" ignore_pattern="!.svn:!.git:!.ds_store:!*.scc:.*:&lt;dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~"><source path="E:\ReactNative\app\AmulApp\node_modules\@react-native-ml-kit\text-recognition\android\src\main\assets"/></dataSet><dataSet config="debug" ignore_pattern="!.svn:!.git:!.ds_store:!*.scc:.*:&lt;dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~"><source path="E:\ReactNative\app\AmulApp\node_modules\@react-native-ml-kit\text-recognition\android\src\debug\assets"/></dataSet><dataSet config="generated" ignore_pattern="!.svn:!.git:!.ds_store:!*.scc:.*:&lt;dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~"><source path="E:\ReactNative\app\AmulApp\node_modules\@react-native-ml-kit\text-recognition\android\build\intermediates\shader_assets\debug\compileDebugShaders\out"/></dataSet></merger>
+\ No newline at end of file
+diff --git a/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/incremental/mergeDebugJniLibFolders/merger.xml b/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/incremental/mergeDebugJniLibFolders/merger.xml
+new file mode 100644
+index 0000000..54eb11e
+--- /dev/null
++++ b/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/incremental/mergeDebugJniLibFolders/merger.xml
+@@ -0,0 +1,2 @@
++<?xml version="1.0" encoding="utf-8"?>
++<merger version="3"><dataSet config="main" ignore_pattern="!.svn:!.git:!.ds_store:!*.scc:.*:&lt;dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~"><source path="E:\ReactNative\app\AmulApp\node_modules\@react-native-ml-kit\text-recognition\android\src\main\jniLibs"/></dataSet><dataSet config="debug" ignore_pattern="!.svn:!.git:!.ds_store:!*.scc:.*:&lt;dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~"><source path="E:\ReactNative\app\AmulApp\node_modules\@react-native-ml-kit\text-recognition\android\src\debug\jniLibs"/></dataSet></merger>
+\ No newline at end of file
+diff --git a/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/incremental/mergeDebugShaders/merger.xml b/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/incremental/mergeDebugShaders/merger.xml
+new file mode 100644
+index 0000000..e505861
+--- /dev/null
++++ b/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/incremental/mergeDebugShaders/merger.xml
+@@ -0,0 +1,2 @@
++<?xml version="1.0" encoding="utf-8"?>
++<merger version="3"><dataSet config="main" ignore_pattern="!.svn:!.git:!.ds_store:!*.scc:.*:&lt;dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~"><source path="E:\ReactNative\app\AmulApp\node_modules\@react-native-ml-kit\text-recognition\android\src\main\shaders"/></dataSet><dataSet config="debug" ignore_pattern="!.svn:!.git:!.ds_store:!*.scc:.*:&lt;dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~"><source path="E:\ReactNative\app\AmulApp\node_modules\@react-native-ml-kit\text-recognition\android\src\debug\shaders"/></dataSet></merger>
+\ No newline at end of file
+diff --git a/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/rnmlkit/textrecognition/BuildConfig.class b/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/rnmlkit/textrecognition/BuildConfig.class
+new file mode 100644
+index 0000000..87aee2f
+Binary files /dev/null and b/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/rnmlkit/textrecognition/BuildConfig.class differ
+diff --git a/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/rnmlkit/textrecognition/TextRecognitionModule$1.class b/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/rnmlkit/textrecognition/TextRecognitionModule$1.class
+new file mode 100644
+index 0000000..d0f6a6a
+Binary files /dev/null and b/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/rnmlkit/textrecognition/TextRecognitionModule$1.class differ
+diff --git a/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/rnmlkit/textrecognition/TextRecognitionModule$2.class b/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/rnmlkit/textrecognition/TextRecognitionModule$2.class
+new file mode 100644
+index 0000000..91d04b2
+Binary files /dev/null and b/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/rnmlkit/textrecognition/TextRecognitionModule$2.class differ
+diff --git a/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/rnmlkit/textrecognition/TextRecognitionModule.class b/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/rnmlkit/textrecognition/TextRecognitionModule.class
+new file mode 100644
+index 0000000..d9900ca
+Binary files /dev/null and b/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/rnmlkit/textrecognition/TextRecognitionModule.class differ
+diff --git a/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/rnmlkit/textrecognition/TextRecognitionPackage.class b/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/rnmlkit/textrecognition/TextRecognitionPackage.class
+new file mode 100644
+index 0000000..ea983b6
+Binary files /dev/null and b/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/rnmlkit/textrecognition/TextRecognitionPackage.class differ
+diff --git a/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/local_only_symbol_list/debug/parseDebugLocalResources/R-def.txt b/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/local_only_symbol_list/debug/parseDebugLocalResources/R-def.txt
+new file mode 100644
+index 0000000..78ac5b8
+--- /dev/null
++++ b/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/local_only_symbol_list/debug/parseDebugLocalResources/R-def.txt
+@@ -0,0 +1,2 @@
++R_DEF: Internal format may change without notice
++local
+diff --git a/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/manifest_merge_blame_file/debug/processDebugManifest/manifest-merger-blame-debug-report.txt b/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/manifest_merge_blame_file/debug/processDebugManifest/manifest-merger-blame-debug-report.txt
+new file mode 100644
+index 0000000..2a6168e
+--- /dev/null
++++ b/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/manifest_merge_blame_file/debug/processDebugManifest/manifest-merger-blame-debug-report.txt
+@@ -0,0 +1,8 @@
++1<?xml version="1.0" encoding="utf-8"?>
++2<!-- AndroidManifest.xml -->
++3<manifest xmlns:android="http://schemas.android.com/apk/res/android"
++4    package="com.rnmlkit.textrecognition" >
++5
++6    <uses-sdk android:minSdkVersion="26" />
++7
++8</manifest>
+diff --git a/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/merged_manifest/debug/processDebugManifest/AndroidManifest.xml b/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/merged_manifest/debug/processDebugManifest/AndroidManifest.xml
+new file mode 100644
+index 0000000..2267fff
+--- /dev/null
++++ b/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/merged_manifest/debug/processDebugManifest/AndroidManifest.xml
+@@ -0,0 +1,8 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- AndroidManifest.xml -->
++<manifest xmlns:android="http://schemas.android.com/apk/res/android"
++    package="com.rnmlkit.textrecognition" >
++
++    <uses-sdk android:minSdkVersion="26" />
++
++</manifest>
+\ No newline at end of file
+diff --git a/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/navigation_json/debug/extractDeepLinksDebug/navigation.json b/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/navigation_json/debug/extractDeepLinksDebug/navigation.json
+new file mode 100644
+index 0000000..0637a08
+--- /dev/null
++++ b/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/navigation_json/debug/extractDeepLinksDebug/navigation.json
+@@ -0,0 +1 @@
++[]
+\ No newline at end of file
+diff --git a/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/nested_resources_validation_report/debug/generateDebugResources/nestedResourcesValidationReport.txt b/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/nested_resources_validation_report/debug/generateDebugResources/nestedResourcesValidationReport.txt
+new file mode 100644
+index 0000000..08f4ebe
+--- /dev/null
++++ b/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/nested_resources_validation_report/debug/generateDebugResources/nestedResourcesValidationReport.txt
+@@ -0,0 +1 @@
++0 Warning/Error
+\ No newline at end of file
+diff --git a/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/runtime_library_classes_dir/debug/bundleLibRuntimeToDirDebug/com/rnmlkit/textrecognition/BuildConfig.class b/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/runtime_library_classes_dir/debug/bundleLibRuntimeToDirDebug/com/rnmlkit/textrecognition/BuildConfig.class
+new file mode 100644
+index 0000000..87aee2f
+Binary files /dev/null and b/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/runtime_library_classes_dir/debug/bundleLibRuntimeToDirDebug/com/rnmlkit/textrecognition/BuildConfig.class differ
+diff --git a/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/runtime_library_classes_dir/debug/bundleLibRuntimeToDirDebug/com/rnmlkit/textrecognition/TextRecognitionModule$1.class b/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/runtime_library_classes_dir/debug/bundleLibRuntimeToDirDebug/com/rnmlkit/textrecognition/TextRecognitionModule$1.class
+new file mode 100644
+index 0000000..d0f6a6a
+Binary files /dev/null and b/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/runtime_library_classes_dir/debug/bundleLibRuntimeToDirDebug/com/rnmlkit/textrecognition/TextRecognitionModule$1.class differ
+diff --git a/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/runtime_library_classes_dir/debug/bundleLibRuntimeToDirDebug/com/rnmlkit/textrecognition/TextRecognitionModule$2.class b/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/runtime_library_classes_dir/debug/bundleLibRuntimeToDirDebug/com/rnmlkit/textrecognition/TextRecognitionModule$2.class
+new file mode 100644
+index 0000000..91d04b2
+Binary files /dev/null and b/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/runtime_library_classes_dir/debug/bundleLibRuntimeToDirDebug/com/rnmlkit/textrecognition/TextRecognitionModule$2.class differ
+diff --git a/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/runtime_library_classes_dir/debug/bundleLibRuntimeToDirDebug/com/rnmlkit/textrecognition/TextRecognitionModule.class b/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/runtime_library_classes_dir/debug/bundleLibRuntimeToDirDebug/com/rnmlkit/textrecognition/TextRecognitionModule.class
+new file mode 100644
+index 0000000..d9900ca
+Binary files /dev/null and b/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/runtime_library_classes_dir/debug/bundleLibRuntimeToDirDebug/com/rnmlkit/textrecognition/TextRecognitionModule.class differ
+diff --git a/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/runtime_library_classes_dir/debug/bundleLibRuntimeToDirDebug/com/rnmlkit/textrecognition/TextRecognitionPackage.class b/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/runtime_library_classes_dir/debug/bundleLibRuntimeToDirDebug/com/rnmlkit/textrecognition/TextRecognitionPackage.class
+new file mode 100644
+index 0000000..ea983b6
+Binary files /dev/null and b/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/runtime_library_classes_dir/debug/bundleLibRuntimeToDirDebug/com/rnmlkit/textrecognition/TextRecognitionPackage.class differ
+diff --git a/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/runtime_library_classes_jar/debug/bundleLibRuntimeToJarDebug/classes.jar b/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/runtime_library_classes_jar/debug/bundleLibRuntimeToJarDebug/classes.jar
+new file mode 100644
+index 0000000..e0d0fee
+Binary files /dev/null and b/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/runtime_library_classes_jar/debug/bundleLibRuntimeToJarDebug/classes.jar differ
+diff --git a/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/symbol_list_with_package_name/debug/generateDebugRFile/package-aware-r.txt b/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/symbol_list_with_package_name/debug/generateDebugRFile/package-aware-r.txt
+new file mode 100644
+index 0000000..1e20448
+--- /dev/null
++++ b/node_modules/@react-native-ml-kit/text-recognition/android/build/intermediates/symbol_list_with_package_name/debug/generateDebugRFile/package-aware-r.txt
+@@ -0,0 +1 @@
++com.rnmlkit.textrecognition
+diff --git a/node_modules/@react-native-ml-kit/text-recognition/android/build/outputs/logs/manifest-merger-debug-report.txt b/node_modules/@react-native-ml-kit/text-recognition/android/build/outputs/logs/manifest-merger-debug-report.txt
+new file mode 100644
+index 0000000..1ef3f2e
+--- /dev/null
++++ b/node_modules/@react-native-ml-kit/text-recognition/android/build/outputs/logs/manifest-merger-debug-report.txt
+@@ -0,0 +1,17 @@
++-- Merging decision tree log ---
++manifest
++ADDED from E:\ReactNative\app\AmulApp\node_modules\@react-native-ml-kit\text-recognition\android\src\main\AndroidManifest.xml:3:1-6:12
++INJECTED from E:\ReactNative\app\AmulApp\node_modules\@react-native-ml-kit\text-recognition\android\src\main\AndroidManifest.xml:3:1-6:12
++	package
++		ADDED from E:\ReactNative\app\AmulApp\node_modules\@react-native-ml-kit\text-recognition\android\src\main\AndroidManifest.xml:4:11-48
++		INJECTED from E:\ReactNative\app\AmulApp\node_modules\@react-native-ml-kit\text-recognition\android\src\main\AndroidManifest.xml
++	xmlns:android
++		ADDED from E:\ReactNative\app\AmulApp\node_modules\@react-native-ml-kit\text-recognition\android\src\main\AndroidManifest.xml:3:11-69
++uses-sdk
++INJECTED from E:\ReactNative\app\AmulApp\node_modules\@react-native-ml-kit\text-recognition\android\src\main\AndroidManifest.xml reason: use-sdk injection requested
++INJECTED from E:\ReactNative\app\AmulApp\node_modules\@react-native-ml-kit\text-recognition\android\src\main\AndroidManifest.xml
++INJECTED from E:\ReactNative\app\AmulApp\node_modules\@react-native-ml-kit\text-recognition\android\src\main\AndroidManifest.xml
++	android:targetSdkVersion
++		INJECTED from E:\ReactNative\app\AmulApp\node_modules\@react-native-ml-kit\text-recognition\android\src\main\AndroidManifest.xml
++	android:minSdkVersion
++		INJECTED from E:\ReactNative\app\AmulApp\node_modules\@react-native-ml-kit\text-recognition\android\src\main\AndroidManifest.xml
+diff --git a/node_modules/@react-native-ml-kit/text-recognition/android/build/tmp/compileDebugJavaWithJavac/previous-compilation-data.bin b/node_modules/@react-native-ml-kit/text-recognition/android/build/tmp/compileDebugJavaWithJavac/previous-compilation-data.bin
+new file mode 100644
+index 0000000..50773f5
+Binary files /dev/null and b/node_modules/@react-native-ml-kit/text-recognition/android/build/tmp/compileDebugJavaWithJavac/previous-compilation-data.bin differ

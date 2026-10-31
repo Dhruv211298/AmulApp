@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- The login / token / attendance APIs on this domain are served over plain
+         HTTP. Allow cleartext ONLY for amuldairy.com (and its subdomains); every
+         other domain must still use HTTPS. Mirrors the iOS ATS exception. -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">amuldairy.com</domain>
+    </domain-config>
+</network-security-config>
